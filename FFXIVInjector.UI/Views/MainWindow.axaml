@@ -1,0 +1,246 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:FFXIVInjector.UI.ViewModels"
+        xmlns:core="using:FFXIVInjector.Core"
+        xmlns:services="using:FFXIVInjector.UI.Services"
+        xmlns:conv="using:FFXIVInjector.UI.Converters"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="600" d:DesignHeight="650"
+        Width="600" SizeToContent="Height"
+        MinWidth="600" MaxWidth="600"
+        WindowStartupLocation="CenterScreen"
+        CanResize="False"
+        x:Class="FFXIVInjector.UI.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Title="{Binding Source={x:Static services:LocalizationService.Instance}, Path=[App.Title]}"
+        SystemDecorations="Full"
+        ExtendClientAreaToDecorationsHint="True">
+
+    <Window.Resources>
+        <conv:EnumToBoolConverter x:Key="EnumToBool"/>
+        <conv:LanguageDisplayConverter x:Key="LanguageDisplayConverter"/>
+        <conv:BoolToValueConverter x:Key="ProgressColorConverter" TrueValue="#D32F2F" FalseValue="{DynamicResource SystemAccentColor}"/>
+    </Window.Resources>
+    <Window.Styles>
+        <Style Selector="ToggleButton#LogToggle">
+            <Setter Property="RenderTransformOrigin" Value="50%,50%" />
+            <Setter Property="RenderTransform" Value="none" />
+        </Style>
+        <Style Selector="ToggleButton#LogToggle:checked">
+            <Setter Property="RenderTransform" Value="rotate(180deg)" />
+        </Style>
+        <Style Selector="ToggleButton#LogToggle:checked /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="ToggleButton#LogToggle:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="ToggleButton#LogToggle:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="Auto, Auto, Auto, Auto" Margin="25">
+        
+        <!-- Row 0: Header Section -->
+        <Grid Grid.Row="0" Margin="0,10,0,25" ColumnDefinitions="*, Auto">
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="{Binding Source={x:Static services:LocalizationService.Instance}, Path=[Header.Title]}" FontSize="26" FontWeight="Bold"/>
+                <Button Command="{Binding OpenDiscordCommand}" 
+                        Content="{Binding Source={x:Static services:LocalizationService.Instance}, Path=[Header.Subtitle]}"
+                        FontSize="14" Opacity="0.6" Margin="0,5,0,0"
+                        Background="Transparent" BorderThickness="0" Padding="0"
+                        HorizontalAlignment="Left" VerticalAlignment="Top"
+                        Cursor="Hand">
+                    <Button.Styles>
+                        <Style Selector="Button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+                            <Setter Property="Background" Value="Transparent"/>
+                            <Setter Property="TextBlock.Foreground" Value="{DynamicResource SystemAccentColor}"/>
+                            <Setter Property="Opacity" Value="1.0"/>
+                        </Style>
+                        <Style Selector="Button:pressed /template/ ContentPresenter#PART_ContentPresenter">
+                            <Setter Property="Background" Value="Transparent"/>
+                            <Setter Property="Opacity" Value="0.8"/>
+                        </Style>
+                    </Button.Styles>
+                </Button>
+            </StackPanel>
+            
+            <!-- UI Language Switcher (Compact) -->
+            <ComboBox Grid.Column="1" VerticalAlignment="Top" Width="70" Height="30"
+                      SelectedItem="{Binding Source={x:Static services:LocalizationService.Instance}, Path=CurrentLanguage}"
+                      ItemsSource="{Binding AvailableLanguages}"
+                      BorderThickness="0" Background="Transparent" Opacity="0.7">
+                <ComboBox.Styles>
+                    <Style Selector="ComboBox:pointerover">
+                        <Setter Property="Opacity" Value="1"/>
+                    </Style>
+                </ComboBox.Styles>
+            </ComboBox>
+        </Grid>
+
+        <!-- Row 1: Fixed Form Elements -->
+        <StackPanel Grid.Row="1" Spacing="25" Margin="0,0,0,25">
+            <StackPanel Spacing="15">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="{Binding Source={x:Static services:LocalizationService.Instance}, Path=[Label.GamePath]}" FontWeight="SemiBold" FontSize="14"/>
+                    <Border BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                            BorderThickness="1" CornerRadius="4" Height="38"
+                            Background="{DynamicResource SystemControlBackgroundAltHighBrush}">
+                        <Grid ColumnDefinitions="*, Auto">
+                            <TextBox Grid.Column="0" Text="{Binding GamePath}" 
+                                     IsReadOnly="{Binding IsGamePathValid}"
+                                     Watermark="{Binding Source={x:Static services:LocalizationService.Instance}, Path=[Status.GamePathNotFound]}" 
+                                     BorderThickness="0"
+                                     Background="Transparent"
+                                     VerticalAlignment="Stretch"
+                                     VerticalContentAlignment="Center"
+                                     Margin="5,0,0,0"/>
+                            
+                            <Button Grid.Column="1" Command="{Binding BrowseFolderCommand}" 
+                                    Content="{Binding Source={x:Static services:LocalizationService.Instance}, Path=[Button.Browse]}" 
+                                    IsEnabled="{Binding CanGlobalInteract}"
+                                    VerticalAlignment="Stretch"
+                                    VerticalContentAlignment="Center"
+                                    Padding="15,0"
+                                    BorderThickness="0"
+                                    Background="Transparent"
+                                    CornerRadius="0,4,4,0"/>
+                            
+                            <Border Grid.Column="1" HorizontalAlignment="Left" Width="1" 
+                                    Background="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                                    Margin="0,5"/>
+                        </Grid>
+                    </Border>
+                </StackPanel>
+
+                <Grid ColumnDefinitions="*, 20, *" IsEnabled="{Binding CanInteract}">
+                    <StackPanel Grid.Column="0" Spacing="8">
+                        <TextBlock Text="{Binding Source={x:Static services:LocalizationService.Instance}, Path=[Label.Branch]}" FontWeight="SemiBold" FontSize="14"/>
+                        <ComboBox SelectedIndex="{Binding SelectedBranch}" HorizontalAlignment="Stretch" Height="35">
+                            <ComboBoxItem>Stable</ComboBoxItem>
+                            <ComboBoxItem>Staging</ComboBoxItem>
+                        </ComboBox>
+                    </StackPanel>
+                    
+                    <StackPanel Grid.Column="2" Spacing="8">
+                        <TextBlock Text="{Binding Source={x:Static services:LocalizationService.Instance}, Path=[Label.Language]}" FontWeight="SemiBold" FontSize="14"/>
+                        <ComboBox HorizontalAlignment="Stretch" Height="35" 
+                                  ItemsSource="{Binding TargetLanguages}"
+                                  SelectedItem="{Binding SelectedLanguage}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Converter={StaticResource LanguageDisplayConverter}}"/>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
+
+            <Separator Height="1" Background="{DynamicResource SystemControlForegroundBaseLowBrush}" Margin="0,5"/>
+
+            <Grid ColumnDefinitions="*,15,*,15,*" Margin="0,5">
+                <Button Grid.Column="0" Command="{Binding OpenCoverageCommand}" 
+                        Content="{Binding Source={x:Static services:LocalizationService.Instance}, Path=[Button.Coverage]}" HorizontalAlignment="Stretch" Height="45"
+                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                        CornerRadius="6" IsEnabled="{Binding CanInteract}"/>
+
+                <Button Grid.Column="2" Command="{Binding RestoreCommand}" 
+                        Content="{Binding Source={x:Static services:LocalizationService.Instance}, Path=[Button.Restore]}" HorizontalAlignment="Stretch" Height="45"
+                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                        CornerRadius="6" IsEnabled="{Binding CanInteract}"/>
+
+                <Button Grid.Column="4" Command="{Binding InjectCommand}" 
+                        HorizontalAlignment="Stretch" Height="45"
+                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                        Foreground="White" FontWeight="Bold"
+                        CornerRadius="6"
+                        IsEnabled="{Binding CanInjectOrCancel}"
+                        Classes.injecting="{Binding IsInjecting}">
+                    <Button.Styles>
+                        <Style Selector="Button">
+                            <Setter Property="Content" Value="{Binding Source={x:Static services:LocalizationService.Instance}, Path=[Button.Inject]}"/>
+                            <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundAccentBrush}"/>
+                        </Style>
+                        <Style Selector="Button.injecting">
+                            <Setter Property="Content" Value="{Binding Source={x:Static services:LocalizationService.Instance}, Path=[Button.Cancel]}"/>
+                            <Setter Property="Background" Value="#D32F2F"/>
+                        </Style>
+                    </Button.Styles>
+                </Button>
+            </Grid>
+        </StackPanel>
+
+        <!-- Row 2: Status Bar and Expand Button -->
+        <Grid Grid.Row="2" ColumnDefinitions="*, Auto">
+            <StackPanel Grid.Column="0" Spacing="5" VerticalAlignment="Center">
+                 <Grid ColumnDefinitions="*, Auto">
+                    <TextBlock Grid.Column="0" Text="{Binding StatusMessage}" 
+                               Foreground="#333333" FontWeight="SemiBold" FontSize="14"
+                               TextTrimming="CharacterEllipsis"/>
+                    
+                    <TextBlock Grid.Column="1" Text="{Binding Progress, StringFormat='{}{0:0}%'}" 
+                               Foreground="#666666" Margin="10,0,0,0"
+                               IsVisible="{Binding !IsIndeterminate}"/>
+                </Grid>
+                <ProgressBar Height="4" 
+                             Foreground="{Binding HasFailed, Converter={StaticResource ProgressColorConverter}}"
+                             Background="#333333"
+                             Minimum="0" Maximum="100" 
+                             Value="{Binding Progress}"
+                             IsIndeterminate="{Binding IsIndeterminate}"/>
+            </StackPanel>
+
+            <ToggleButton Grid.Column="1" x:Name="LogToggle"
+                          IsChecked="{Binding IsLogExpanded}"
+                          Margin="15,0,0,0" Width="30" Height="30"
+                          CornerRadius="15" Background="Transparent"
+                          BorderThickness="0">
+                <Path Data="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z" 
+                      Fill="{DynamicResource SystemControlForegroundBaseHighBrush}"
+                      Stretch="Uniform" 
+                      Width="12" Height="12"/>
+            </ToggleButton>
+        </Grid>
+
+        <!-- Row 3: Collapsible Log Area -->
+        <Border Grid.Row="3" Background="#1E1E1E" CornerRadius="8" Padding="15" Margin="0,15,0,0"
+                IsVisible="{Binding IsLogExpanded}">
+            <TextBox x:Name="LogTextBox"
+                     Text="{Binding LogText}" 
+                     IsReadOnly="True"
+                     TextWrapping="NoWrap"
+                     AcceptsReturn="True"
+                     Height="200"
+                     VerticalAlignment="Stretch"
+                     Foreground="#CCCCCC" 
+                     FontFamily="Consolas, Cascadia Code, Monospace" 
+                     FontSize="12"
+                     ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                     SelectionBrush="{DynamicResource SystemAccentColor}"
+                     BorderThickness="0"
+                     FocusAdorner="{x:Null}">
+                <TextBox.Styles>
+                    <Style Selector="TextBox">
+                        <Setter Property="Background" Value="Transparent"/>
+                        <Setter Property="BorderBrush" Value="Transparent"/>
+                    </Style>
+                    <Style Selector="TextBox:pointerover /template/ Border#PART_BorderElement">
+                        <Setter Property="Background" Value="Transparent"/>
+                        <Setter Property="BorderBrush" Value="Transparent"/>
+                    </Style>
+                    <Style Selector="TextBox:focus /template/ Border#PART_BorderElement">
+                        <Setter Property="Background" Value="Transparent"/>
+                        <Setter Property="BorderBrush" Value="Transparent"/>
+                    </Style>
+                </TextBox.Styles>
+            </TextBox>
+        </Border>
+    </Grid>
+</Window>

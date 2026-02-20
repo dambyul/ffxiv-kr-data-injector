@@ -1,0 +1,138 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:FFXIVInjector.UI.ViewModels"
+        xmlns:services="using:FFXIVInjector.UI.Services"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        x:Class="FFXIVInjector.UI.Views.CoverageWindow"
+        x:DataType="vm:CoverageViewModel"
+        Title="{Binding Source={x:Static services:LocalizationService.Instance}, Path=[CoverageWindow.Title]}" Width="800" Height="550"
+        WindowStartupLocation="CenterOwner"
+        SystemDecorations="Full"
+        ExtendClientAreaToDecorationsHint="True">
+
+    <Grid Margin="20" RowDefinitions="Auto,*,Auto">
+
+        <StackPanel Grid.Row="0" Margin="0,0,0,15">
+            <TextBlock Text="{Binding Source={x:Static services:LocalizationService.Instance}, Path=[CoverageWindow.Header]}" FontSize="24" FontWeight="Bold"/>
+            <TextBlock Text="{Binding Source={x:Static services:LocalizationService.Instance}, Path=[CoverageWindow.Subtitle]}" 
+                       FontSize="14" Opacity="0.6" Margin="0,5,0,0"/>
+        </StackPanel>
+
+        <Border Grid.Row="1" 
+                Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" 
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                BorderThickness="1"
+                CornerRadius="8" ClipToBounds="True">
+            
+            <Grid>
+            <ListBox ItemsSource="{Binding Presets}" 
+                    x:CompileBindings="False" 
+                    Background="Transparent" 
+                    Padding="10,10,20,10" 
+                    ScrollViewer.VerticalScrollBarVisibility="Auto"
+                    SelectionMode="Multiple,Toggle">
+                <ListBox.Styles>
+                    <Style Selector="ListBoxItem">
+                        <Setter Property="Padding" Value="0"/>
+                        <Setter Property="Margin" Value="0,0,0,10"/>
+                        <Setter Property="CornerRadius" Value="6"/>
+                        <Setter Property="Cursor" Value="Hand"/>
+                        
+                        <Setter Property="IsSelected" Value="{Binding IsChecked, Mode=TwoWay}"/>
+                    </Style>
+
+                    <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
+                        <Setter Property="Background" Value="Transparent"/>
+                    </Style>
+                    <Style Selector="ListBoxItem:pointerover Border#CardBorder">
+                        <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundBaseLowBrush}"/>
+                        <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    </Style>
+
+                    <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+                        <Setter Property="Background" Value="Transparent"/>
+                    </Style>
+                    <Style Selector="ListBoxItem:selected Border#CardBorder">
+                        <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColor}"/>
+                        <Setter Property="BorderThickness" Value="1"/>
+                    </Style>
+                </ListBox.Styles>
+
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Border Name="CardBorder"
+                                Background="{DynamicResource SystemControlBackgroundAltHighBrush}" 
+                                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                                BorderThickness="1" 
+                                CornerRadius="6" 
+                                Padding="15,12"
+                                ToolTip.Tip="{Binding Tooltip}"
+                                ToolTip.ShowDelay="1000">
+                            <Grid ColumnDefinitions="Auto,*">
+                                
+                                <CheckBox Grid.Column="0" 
+                                        IsChecked="{Binding IsChecked}" 
+                                        IsHitTestVisible="False"
+                                        VerticalAlignment="Top" 
+                                        Margin="0,2,15,0"/>
+                                
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4" Spacing="8">
+                                        <TextBlock Text="{Binding Name}" 
+                                                FontWeight="Bold" 
+                                                FontSize="15"/>
+                                        <Ellipse Width="10" Height="10" 
+                                                 Fill="#FF5252" 
+                                                 IsVisible="{Binding HasUnresolvedRsv}"
+                                                 VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding Description}" 
+                                            FontSize="13" 
+                                            Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" 
+                                            TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+                
+                <StackPanel Orientation="Vertical" HorizontalAlignment="Center" VerticalAlignment="Center"
+                            IsVisible="{Binding !Presets.Count}">
+                    <TextBlock Text="{Binding Source={x:Static services:LocalizationService.Instance}, Path=[CoverageWindow.List.Empty]}" 
+                               HorizontalAlignment="Center"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                               FontSize="16" FontWeight="SemiBold"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="2" ColumnDefinitions="Auto,*,Auto" Margin="0,20,0,0">
+    <CheckBox Grid.Column="0" 
+              Content="{Binding Source={x:Static services:LocalizationService.Instance}, Path=[CoverageWindow.Checkbox.SelectAll]}" 
+              IsChecked="{Binding IsAllSelected}"
+              VerticalAlignment="Center"/>
+    
+    <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right" Orientation="Horizontal" Spacing="8" Margin="0,0,25,0">
+        <TextBlock Text="{Binding Source={x:Static services:LocalizationService.Instance}, Path=[Coverage.CompatibilityMode]}"
+                   VerticalAlignment="Center"
+                   ToolTip.Tip="{Binding Source={x:Static services:LocalizationService.Instance}, Path=[Coverage.CompatibilityMode.Tooltip]}"/>
+        <ToggleSwitch IsChecked="{Binding IsCompatibilityModeEnabled}"
+                      OnContent="" OffContent=""
+                      ToolTip.Tip="{Binding Source={x:Static services:LocalizationService.Instance}, Path=[Coverage.CompatibilityMode.Tooltip]}"/>
+    </StackPanel>
+    
+    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10">
+        <Button Name="CancelButton" Content="{Binding Source={x:Static services:LocalizationService.Instance}, Path=[CoverageWindow.Button.Cancel]}" Width="100" Height="35"
+                HorizontalContentAlignment="Center" VerticalContentAlignment="Center"/>
+        
+        <Button Name="ApplyButton" Content="{Binding Source={x:Static services:LocalizationService.Instance}, Path=[CoverageWindow.Button.Apply]}" Width="100" Height="35"
+                Background="{DynamicResource SystemControlBackgroundAccentBrush}"
+                Foreground="White"
+                FontWeight="SemiBold"
+                HorizontalContentAlignment="Center" VerticalContentAlignment="Center"/>
+    </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

@@ -1,0 +1,33 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:services="using:FFXIVInjector.UI.Services"
+        x:Class="FFXIVInjector.UI.Views.InputWindow"
+        Title="Input"
+        Width="400" SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        SystemDecorations="Full"
+        ExtendClientAreaToDecorationsHint="True">
+
+    <Grid RowDefinitions="Auto, Auto, Auto" Margin="20">
+        
+        <TextBlock Name="MessageText" Grid.Row="0" Margin="0,0,0,15"
+                   FontSize="14" TextWrapping="Wrap"/>
+        
+        <TextBox Name="InputTextBox" Grid.Row="1" Margin="0,0,0,20"/>
+
+        <Grid Grid.Row="2" ColumnDefinitions="*, 10, *">
+            <Button Name="CancelButton" Grid.Column="0" Content="{Binding Source={x:Static services:LocalizationService.Instance}, Path=[Button.Cancel]}" 
+                    HorizontalAlignment="Stretch" Height="35"
+                    HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                    CornerRadius="4"/>
+            
+            <Button Name="OkButton" Grid.Column="2" Content="{Binding Source={x:Static services:LocalizationService.Instance}, Path=[Button.Ok]}" 
+                    HorizontalAlignment="Stretch" Height="35"
+                    HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                    Background="{DynamicResource SystemAccentColor}" 
+                    Foreground="White" FontWeight="Bold"
+                    CornerRadius="4" IsDefault="True"/>
+        </Grid>
+    </Grid>
+</Window>
