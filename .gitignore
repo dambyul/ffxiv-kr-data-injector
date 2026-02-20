@@ -1,0 +1,39 @@
+# .NET
+[Bb]in/
+[Oo]bj/
+*.user
+*.userosscache
+*.sln.docstates
+
+# Visual Studio
+.vs/
+.vscode/
+
+# Environment and Secrets
+
+appsettings.json
+appsettings.*.json
+usersecrets.json
+Secrets.cs
+
+# Rider
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project Specific
+FFXIVInjector.UI/msbuild.log
+FFXIVInjector.UI/build_log.txt
+FFXIVInjector.UI/build_output.txt
+backup/
+resources/rawexd/
+resources/font/
+resources/data.json
+resources/backup/
+coverage_selection.json
+resources/
+*.zip
+version.txt
+publish/
