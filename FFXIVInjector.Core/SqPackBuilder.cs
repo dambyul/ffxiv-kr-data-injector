@@ -141,10 +141,16 @@ public static class SqPackBuilder
             BinaryPrimitives.WriteUInt32LittleEndian(mipTable.AsSpan(m * 20, 4), off + (uint)paddedTexHeaderSize);
         }
 
+        // RawFileSize = paddedTexHeaderSize + total decompressed size (Lumina uses this as decode buffer size)
+        uint totalDecompressedSize = 0;
+        for (int m = 0; m < mipCount; m++)
+            totalDecompressedSize += BinaryPrimitives.ReadUInt32LittleEndian(mipTable.AsSpan(m * 20 + 8, 4));
+        uint rawFileSize = (uint)paddedTexHeaderSize + totalDecompressedSize;
+
         byte[] finalHeader = new byte[paddedHeaderAreaSize];
         BinaryPrimitives.WriteUInt32LittleEndian(finalHeader.AsSpan(0, 4), (uint)paddedHeaderAreaSize);
         BinaryPrimitives.WriteUInt32LittleEndian(finalHeader.AsSpan(4, 4), 4); // Type 4: Texture
-        BinaryPrimitives.WriteUInt32LittleEndian(finalHeader.AsSpan(8, 4), (uint)data.Length); // Raw Size
+        BinaryPrimitives.WriteUInt32LittleEndian(finalHeader.AsSpan(8, 4), rawFileSize); // Raw Size
         
         int totalEntrySize = (alignedBlockStart + (int)msBodies.Length + 127) & ~127;
         BinaryPrimitives.WriteUInt32LittleEndian(finalHeader.AsSpan(12, 4), (uint)(totalEntrySize / 128));
@@ -161,6 +167,10 @@ public static class SqPackBuilder
         byte[] result = new byte[finalHeader.Length + paddedTexHeaderSize + (int)msBodies.Length];
         Array.Copy(finalHeader, 0, result, 0, finalHeader.Length);
         Array.Copy(data, 0, result, finalHeader.Length, texHeaderSize); // Original raw .tex header
+
+        // OffsetToSurface[0] must reflect paddedTexHeaderSize; Lumina seeks to this offset before reading pixels.
+        BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(finalHeader.Length + 28, 4), (uint)paddedTexHeaderSize);
+
         Array.Copy(msBodies.ToArray(), 0, result, finalHeader.Length + paddedTexHeaderSize, (int)msBodies.Length);
 
         return result;
