@@ -306,7 +306,21 @@ public class CsvInjector : IPatcher
                         
                         if (repositoryMap.TryGetValue(fullHash, out var info))
                         {
-                            injectionQueue.Add((internalPath, File.ReadAllBytes(file), extension == ".tex", ph, fh, info.domain, info.folder));
+                            byte[] assetData = File.ReadAllBytes(file);
+                            if (extension == ".fdt")
+                            {
+                                try
+                                {
+                                    assetData = FontMerger.Repair(assetData);
+                                    OnLog?.Invoke($"    [Font] Repaired KNHD search tree for {internalPath}");
+                                }
+                                catch (Exception ex)
+                                {
+                                    OnLog?.Invoke($"    [Warning] Failed to repair FDT {internalPath}: {ex.Message}");
+                                }
+                            }
+                            
+                            injectionQueue.Add((internalPath, assetData, extension == ".tex", ph, fh, info.domain, info.folder));
                             reconstructedCount++;
                         }
                         else
