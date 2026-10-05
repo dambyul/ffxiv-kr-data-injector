@@ -106,5 +106,15 @@
     "Coverage.DefaultFont.Description": "Default font files",
     "Coverage.DefaultCsv.Name": "All CSV (Default)",
     "Coverage.DefaultCsv.Description": "All CSV data",
-    "Log.CompatibilityModeEnabled": "Third-party compatibility mode enabled."
+    "Log.CompatibilityModeEnabled": "Third-party compatibility mode enabled.",
+    "Coverage.Images.Name": "Korean image resources",
+    "Coverage.Images.Description": "Display Korean region banners, level-up messages and other image text. First download about 337 MB; disk space about 5.3 GB. Uncheck and apply to remove the image loader.",
+    "Images.Remove.Title": "Remove Korean image resources",
+    "Images.Remove.Message": "Text restoration is complete.\nWould you like to remove Korean image resources?",
+    "Images.Remove.Yes": "Yes",
+    "Images.Remove.No": "No",
+    "Status.RestoreAndImagesRemoved": "Text restored and Korean image swapping removed.",
+    "Status.ImageRemovalFailed": "Text restored, but removing Korean image swapping failed: {0}",
+    "Warning.Administrator.Title": "Run as administrator",
+    "Warning.Administrator.Message": "This program is not running as administrator.\nChanging game files or installing and removing the image loader may fail due to insufficient permissions.\n\nClose the program, right-click the executable, and select “Run as administrator”."
 }

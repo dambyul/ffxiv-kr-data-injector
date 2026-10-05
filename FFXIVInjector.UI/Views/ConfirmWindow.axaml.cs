@@ -30,4 +30,17 @@ public partial class ConfirmWindow : Window
         dialog.FindControl<Button>("NoButton")!.Content = noText;
         return await dialog.ShowDialog<bool>(owner);
     }
+
+    public static async Task ShowNoticeDialog(Window owner, string title, string message, string buttonText)
+    {
+        var dialog = new ConfirmWindow { Title = title };
+        dialog.FindControl<TextBlock>("TitleText")!.Text = title;
+        dialog.FindControl<TextBlock>("MessageText")!.Text = message;
+        dialog.FindControl<Button>("NoButton")!.IsVisible = false;
+        var button = dialog.FindControl<Button>("YesButton")!;
+        button.Content = buttonText;
+        Grid.SetColumn(button, 0);
+        Grid.SetColumnSpan(button, 3);
+        await dialog.ShowDialog<bool>(owner);
+    }
 }

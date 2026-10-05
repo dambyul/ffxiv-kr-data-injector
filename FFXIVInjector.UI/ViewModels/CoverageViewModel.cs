@@ -17,6 +17,8 @@ public partial class CoverageViewModel : ObservableObject
     private ObservableCollection<PresetItemViewModel> _presets = new();
 
     private bool _isUpdatingSelection = false;
+    private bool _loadingSelection;
+    public bool ImageResourcesSelected => Presets.Any(p => p.IsImageResources && p.IsChecked);
 
     private bool? _isAllSelected;
     public bool? IsAllSelected
@@ -87,10 +89,12 @@ public partial class CoverageViewModel : ObservableObject
     {
         public List<string> Presets { get; set; } = new();
         public bool CompatibilityMode { get; set; }
+        public bool ImageResources { get; set; }
     }
 
     private void LoadSelection()
     {
+        _loadingSelection = true;
         try
         {
             if (File.Exists(_appDataPath))
@@ -104,7 +108,7 @@ public partial class CoverageViewModel : ObservableObject
                     {
                         foreach (var preset in Presets)
                         {
-                            preset.IsChecked = data.Presets.Contains(preset.Name);
+                            preset.IsChecked = preset.IsImageResources ? data.ImageResources : data.Presets.Contains(preset.Name);
                         }
                         IsCompatibilityModeEnabled = data.CompatibilityMode;
                         return;
@@ -125,16 +129,19 @@ public partial class CoverageViewModel : ObservableObject
             }
         }
         catch (Exception) { /* Ignore load errors */ }
+        finally { _loadingSelection = false; }
     }
 
     private void SaveSelection()
     {
+        if (_loadingSelection) return;
         try
         {
             var data = new SelectionData
             {
-                Presets = Presets.Where(p => p.IsChecked).Select(p => p.Name).ToList(),
-                CompatibilityMode = IsCompatibilityModeEnabled
+                Presets = Presets.Where(p => p.IsChecked && !p.IsImageResources).Select(p => p.Name).ToList(),
+                CompatibilityMode = IsCompatibilityModeEnabled,
+                ImageResources = ImageResourcesSelected
             };
             
             var json = JsonSerializer.Serialize(data);
@@ -210,6 +217,15 @@ public partial class CoverageViewModel : ObservableObject
             });
         }
 
+        var localization = Services.LocalizationService.Instance;
+        Presets.Add(new PresetItemViewModel {
+            Name = localization.GetString("Coverage.Images.Name"),
+            Description = localization.GetString("Coverage.Images.Description"),
+            IsImageResources = true,
+            IsChecked = false,
+            Preset = new CoveragePreset()
+        });
+
         // Attach property change handlers for auto-save
         foreach (var preset in Presets)
         {
@@ -233,7 +249,7 @@ public partial class CoverageViewModel : ObservableObject
     public string[] GetSelectedFiles()
     {
         var result = new List<string>();
-        foreach (var item in Presets.Where(p => p.IsChecked))
+        foreach (var item in Presets.Where(p => p.IsChecked && !p.IsImageResources))
         {
             foreach (var entry in item.Preset.Entries)
             {
