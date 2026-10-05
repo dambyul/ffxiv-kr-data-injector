@@ -13,6 +13,14 @@ public enum ResourceStatus { Checking, Downloading, Extracting, Ready, Error }
 
 public class S3ResourceManager
 {
+    public static string ParseVersionText(string raw, ResourceBranch branch)
+    {
+        string search = raw.Trim();
+        foreach (string line in search.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries))
+            if (line.Contains(branch.ToString(), StringComparison.OrdinalIgnoreCase)) { search = line; break; }
+        var match = System.Text.RegularExpressions.Regex.Match(search, @"[\d.]+");
+        return match.Success ? match.Value.Trim('.') : "0.0.0.0.0";
+    }
     private static string BaseUrl => Config.ResourceBaseUrl;
     
     public event Action<string>? OnLog;
@@ -73,6 +81,7 @@ public class S3ResourceManager
             }
 
             // Prompt for update if callback provided
+            if (onConfirmUpdate != null)
             {
                 bool confirmed = await onConfirmUpdate();
                 if (!confirmed) return false;

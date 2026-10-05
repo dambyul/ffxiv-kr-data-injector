@@ -89,5 +89,15 @@
     "Log.NewVersionAvailable": "새로운 {0} 버전 발견: {1} (브랜치: {2})",
     "Log.UpdateCompleted": "{0} 리소스 업데이트 완료 (로컬 버전: {1})",
     "Log.MajorError": "리소스 확인 중 치명적 오류 발생: {0}",
-    "Log.AllResourcesUpToDate": "모든 리소스가 최신입니다."
+    "Log.AllResourcesUpToDate": "모든 리소스가 최신입니다.",
+    "Coverage.Images.Name": "한국어 이미지 리소스",
+    "Coverage.Images.Description": "지역명·레벨 업·알림 등의 이미지 문구를 한국어로 표시합니다. 최초 다운로드 약 337MB, 저장 공간 약 5.3GB. 선택 해제 후 적용하면 이미지 로더가 제거됩니다.",
+    "Images.Remove.Title": "한국어 이미지 리소스 삭제",
+    "Images.Remove.Message": "텍스트 복원이 완료되었습니다.\n한국어 이미지 리소스를 삭제하시겠습니까?",
+    "Images.Remove.Yes": "예",
+    "Images.Remove.No": "아니요",
+    "Status.RestoreAndImagesRemoved": "텍스트 복원 및 한국어 이미지 적용 해제 완료",
+    "Status.ImageRemovalFailed": "텍스트 복원은 완료됐지만 한국어 이미지 적용 해제에 실패했습니다: {0}",
+    "Warning.Administrator.Title": "관리자 권한으로 실행해 주세요",
+    "Warning.Administrator.Message": "현재 관리자 권한으로 실행되지 않았습니다.\n게임 파일 변경이나 이미지 로더 설치·제거 과정에서 권한 오류가 발생할 수 있습니다.\n\n프로그램을 종료한 뒤 실행 파일을 우클릭하여 “관리자 권한으로 실행”을 선택해 주세요."
 }

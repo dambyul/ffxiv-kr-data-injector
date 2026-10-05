@@ -8,6 +8,7 @@ using FFXIVInjector.UI.ViewModels;
 using FFXIVInjector.Core;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using System.Security.Principal;
 
 namespace FFXIVInjector.UI;
 
@@ -95,6 +96,18 @@ public partial class App : Application
                 return await ConfirmWindow.ShowConfirmDialog(desktop.MainWindow);
             };
 
+            vm.OnRequestImageRemovalConfirmation = async () =>
+            {
+                if (desktop.MainWindow == null) return false;
+                return await ConfirmWindow.ShowConfirmDialog(
+                    desktop.MainWindow,
+                    title: Services.LocalizationService.Instance.GetString("Images.Remove.Title"),
+                    message: Services.LocalizationService.Instance.GetString("Images.Remove.Message"),
+                    yesText: Services.LocalizationService.Instance.GetString("Images.Remove.Yes"),
+                    noText: Services.LocalizationService.Instance.GetString("Images.Remove.No")
+                );
+            };
+
             vm.OnRequestBackupRetention = async () =>
             {
                 if (desktop.MainWindow == null) return true;
@@ -131,8 +144,23 @@ public partial class App : Application
                 DataContext = vm
             };
 
-            // Trigger Initial S3 Resource Check after window is ready
-            vm.TriggerResourceCheck();
+            desktop.MainWindow.Opened += async (_, _) =>
+            {
+                if (OperatingSystem.IsWindows())
+                {
+                    using var identity = WindowsIdentity.GetCurrent();
+                    if (!new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator))
+                    {
+                        var localization = Services.LocalizationService.Instance;
+                        await ConfirmWindow.ShowNoticeDialog(
+                            desktop.MainWindow,
+                            localization.GetString("Warning.Administrator.Title"),
+                            localization.GetString("Warning.Administrator.Message"),
+                            localization.GetString("Button.Ok"));
+                    }
+                }
+                vm.TriggerResourceCheck();
+            };
         }
 
         base.OnFrameworkInitializationCompleted();

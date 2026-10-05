@@ -15,5 +15,8 @@
     <Compile Remove="Secrets.Example.cs" />
     <None Include="Secrets.Example.cs" />
   </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Native\dinput8.dll" LogicalName="FFXIVInjector.Core.Native.dinput8.dll" />
+  </ItemGroup>
 
 </Project>

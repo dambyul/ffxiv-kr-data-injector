@@ -24,4 +24,5 @@ public partial class PresetItemViewModel : ObservableObject
         : null;
 
     public CoveragePreset Preset { get; set; } = new();
+    public bool IsImageResources { get; init; }
 }

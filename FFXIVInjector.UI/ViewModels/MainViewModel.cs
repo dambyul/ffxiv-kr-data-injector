@@ -273,6 +273,7 @@ public partial class MainViewModel : ObservableObject
     public Func<Task<bool>>? OnRequestUpdateConfirmation { get; set; }
     public Func<Task<bool>>? OnRequestBackupRetention { get; set; }
     public Func<Task<bool>>? OnRequestBackupDeletionWarning { get; set; }
+    public Func<Task<bool>>? OnRequestImageRemovalConfirmation { get; set; }
     public Action? OnRequestClose { get; set; }
     public Func<Task<string[]?>>? OnRequestCoverage { get; set; }
     public Func<string, string, string, Task<string?>>? OnRequestInput { get; set; }
@@ -315,7 +316,7 @@ public partial class MainViewModel : ObservableObject
 
         if (string.IsNullOrEmpty(_csvResourcePath) || !Directory.Exists(_csvResourcePath))
         {
-             _csvResourcePath = PathConstants.CsvPath;
+             _csvResourcePath = PathConstants.ResourcesRoot;
         }
 
         if (!Directory.Exists(_csvResourcePath))
@@ -340,12 +341,27 @@ public partial class MainViewModel : ObservableObject
         {
             await Task.Run(async () => 
             {
+                var cvm = new CoverageViewModel(_csvResourcePath);
+                var selectedFiles = cvm.GetSelectedFiles();
+                bool imageResources = cvm.ImageResourcesSelected;
+                var imageManager = new IconResourceManager();
+                imageManager.OnLog += Log;
+                imageManager.OnStatus += message => Avalonia.Threading.Dispatcher.UIThread.Post(() => StatusMessage = message);
+                imageManager.OnProgress += percent => Avalonia.Threading.Dispatcher.UIThread.Post(() => { IsIndeterminate = false; Progress = percent; });
+                string? imagePackage = null;
+                if (imageResources) IconResourceManager.CheckInstallation(targetPath);
+                if (imageResources) imagePackage = await imageManager.EnsurePackageAsync(targetPath, SelectedBranch, _injectCts.Token);
+                _injectCts.Token.ThrowIfCancellationRequested();
+
                 // 1. Create Backup
                 var backupName = DateTime.Now.ToString("yyyyMMddHHmm");
                 Avalonia.Threading.Dispatcher.UIThread.Post(() => StatusMessage = LocalizationService.Instance.GetString("Status.CreatingBackup"));
                 var backupManager = new BackupManager();
-                currentBackupTimestamp = backupManager.CreateBackup(targetPath, backupName);
-                Log(LocalizationService.Instance.GetString("Log.BackupCreated", currentBackupTimestamp));
+                if (selectedFiles.Length > 0)
+                {
+                    currentBackupTimestamp = backupManager.CreateBackup(targetPath, backupName);
+                    Log(LocalizationService.Instance.GetString("Log.BackupCreated", currentBackupTimestamp));
+                }
 
 
                 // 2. Perform Injection
@@ -365,17 +381,11 @@ public partial class MainViewModel : ObservableObject
 
                 Log(LocalizationService.Instance.GetString("Log.InjectingFrom", _csvResourcePath));
                 
-                HashSet<string>? fileFilter = null;
-                bool useCompatibilityMode = false;
+                var fileFilter = new HashSet<string>(selectedFiles, StringComparer.OrdinalIgnoreCase);
+                bool useCompatibilityMode = cvm.IsCompatibilityModeEnabled;
 
-                // Load coverage settings via transient VM
-                var cvm = new CoverageViewModel(_csvResourcePath);
-                var selectedFiles = cvm.GetSelectedFiles();
-                useCompatibilityMode = cvm.IsCompatibilityModeEnabled;
-
-                if (selectedFiles != null && selectedFiles.Length > 0)
+                if (selectedFiles.Length > 0)
                 {
-                    fileFilter = new HashSet<string>(selectedFiles, StringComparer.OrdinalIgnoreCase);
                     Log(LocalizationService.Instance.GetString("Log.UsingFilter", fileFilter.Count));
                 }
                 
@@ -386,7 +396,11 @@ public partial class MainViewModel : ObservableObject
                 }
                 
                 // Note: SelectedLanguage is GameLanguage enum (jp/en/de/fr)
-                patcher.Inject(targetPath, _csvResourcePath, SelectedLanguage, fileFilter, null, progress, _injectCts.Token, useCompatibilityMode);
+                if (selectedFiles.Length > 0)
+                    patcher.Inject(targetPath, _csvResourcePath, SelectedLanguage, fileFilter, null, progress, _injectCts.Token, useCompatibilityMode);
+                _injectCts.Token.ThrowIfCancellationRequested();
+                if (imageResources) imageManager.Install(targetPath, imagePackage!);
+                else imageManager.Uninstall(targetPath);
                 
                 success = true;
                 Avalonia.Threading.Dispatcher.UIThread.Post(() => {
@@ -559,11 +573,13 @@ public partial class MainViewModel : ObservableObject
                     StatusMessage = LocalizationService.Instance.GetString("Status.RestoringBackup", selectedBackup);
                     Log(LocalizationService.Instance.GetString("Log.StartingRestore", selectedBackup));
                     
+                    bool restored = false;
                     await Task.Run(() =>
                     {
                         try
                         {
                             backupManager.RestoreBackup(targetPath, selectedBackup);
+                            restored = true;
                             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
                             {
                                 StatusMessage = LocalizationService.Instance.GetString("Status.RestoreSuccess");
@@ -579,6 +595,31 @@ public partial class MainViewModel : ObservableObject
                             });
                         }
                     });
+                    if (restored && IconResourceManager.HasInstallation(targetPath) && OnRequestImageRemovalConfirmation != null)
+                    {
+                        bool removeImages = await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(OnRequestImageRemovalConfirmation);
+                        if (removeImages)
+                        {
+                            try
+                            {
+                                await Task.Run(() =>
+                                {
+                                    var images = new IconResourceManager();
+                                    images.OnLog += Log;
+                                    images.Uninstall(targetPath);
+                                });
+                                Avalonia.Threading.Dispatcher.UIThread.Post(() => StatusMessage = LocalizationService.Instance.GetString("Status.RestoreAndImagesRemoved"));
+                            }
+                            catch (Exception ex)
+                            {
+                                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                                {
+                                    StatusMessage = LocalizationService.Instance.GetString("Status.ImageRemovalFailed", ex.Message);
+                                    Log(StatusMessage);
+                                });
+                            }
+                        }
+                    }
                 }
                 else
                 {

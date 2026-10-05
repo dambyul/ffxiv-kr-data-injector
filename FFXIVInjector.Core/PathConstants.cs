@@ -11,6 +11,7 @@ public static class PathConstants
     );
 
     public static string ResourcesRoot => Path.Combine(AppDataPath, "resources");
+    public static string IconPackagePath => Path.Combine(AppDataPath, "image-packages");
     public static string CsvPath => Path.Combine(ResourcesRoot, "rawexd");
     public static string FontPath => Path.Combine(ResourcesRoot, "font");
     public static string DataJsonPath => Path.Combine(ResourcesRoot, "data.json");
