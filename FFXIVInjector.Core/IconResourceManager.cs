@@ -15,7 +15,7 @@ public sealed class IconResourceManager
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true };
     private static readonly Regex VersionPattern = new(@"^\d{4}\.\d{2}\.\d{2}\.\d{4}\.\d{4}$");
     private static readonly Regex DigestPattern = new("^[0-9a-f]{64}$");
-    private static readonly Regex TargetPattern = new(@"^ui/icon/(?<family>12\d)000/(?:(?<language>en|ja|de|fr)/)?\k<family>\d{3}(_hr1)?\.tex$");
+    private static readonly Regex TargetPattern = new(@"^ui/icon/(?<family>\d{3})000/(?:(?<language>en|ja|de|fr)/)?\k<family>\d{3}(_hr1)?\.tex$");
     public event Action<string>? OnLog;
     public event Action<double>? OnProgress;
     public event Action<string>? OnStatus;
