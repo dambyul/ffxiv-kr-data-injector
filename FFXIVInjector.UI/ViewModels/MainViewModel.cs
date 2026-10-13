@@ -90,8 +90,6 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private string _logText = "";
 
-    [ObservableProperty]
-    private string[] _availableLanguages = new[] { "ko", "en" };
 
     [ObservableProperty]
     private GameLanguage _selectedLanguage = GameLanguage.Japanese;
@@ -271,12 +269,9 @@ public partial class MainViewModel : ObservableObject
 
     public Action? OnRequestFolderPicker { get; set; }
     public Func<Task<bool>>? OnRequestUpdateConfirmation { get; set; }
-    public Func<Task<bool>>? OnRequestBackupRetention { get; set; }
-    public Func<Task<bool>>? OnRequestBackupDeletionWarning { get; set; }
-    public Func<Task<bool>>? OnRequestImageRemovalConfirmation { get; set; }
+    public Func<Task<bool?>>? OnRequestRestoreConfirmation { get; set; }
     public Action? OnRequestClose { get; set; }
     public Func<Task<string[]?>>? OnRequestCoverage { get; set; }
-    public Func<string, string, string, Task<string?>>? OnRequestInput { get; set; }
 
 
     [ObservableProperty]
@@ -305,6 +300,7 @@ public partial class MainViewModel : ObservableObject
             Log(LocalizationService.Instance.GetString("Log.CancellationRequested"));
             return;
         }
+        if (IsRestoring || IsDownloadingResources) return;
 
         string targetPath = GetActualGamePath();
         
@@ -329,8 +325,7 @@ public partial class MainViewModel : ObservableObject
         IsInjecting = true;
         HasFailed = false;
         _injectCts = new CancellationTokenSource();
-        string? currentBackupTimestamp = null;
-        bool success = false;
+        string? workspace = null;
 
         StatusMessage = LocalizationService.Instance.GetString("Status.InjectingPath");
         Log(LocalizationService.Instance.GetString("Log.StartingInjection", targetPath));
@@ -343,26 +338,23 @@ public partial class MainViewModel : ObservableObject
             {
                 var cvm = new CoverageViewModel(_csvResourcePath);
                 var selectedFiles = cvm.GetSelectedFiles();
+                bool applyFonts = selectedFiles.Any(path => path.Replace('\\', '/').StartsWith("font/", StringComparison.OrdinalIgnoreCase));
                 bool imageResources = cvm.ImageResourcesSelected;
                 var imageManager = new IconResourceManager();
                 imageManager.OnLog += Log;
                 imageManager.OnStatus += message => Avalonia.Threading.Dispatcher.UIThread.Post(() => StatusMessage = message);
                 imageManager.OnProgress += percent => Avalonia.Threading.Dispatcher.UIThread.Post(() => { IsIndeterminate = false; Progress = percent; });
                 string? imagePackage = null;
-                if (imageResources) IconResourceManager.CheckInstallation(targetPath);
+                if (imageResources || IconResourceManager.HasInstallation(targetPath)) IconResourceManager.CheckInstallation(targetPath);
                 if (imageResources) imagePackage = await imageManager.EnsurePackageAsync(targetPath, SelectedBranch, _injectCts.Token);
                 _injectCts.Token.ThrowIfCancellationRequested();
 
-                // 1. Create Backup
-                var backupName = DateTime.Now.ToString("yyyyMMddHHmm");
-                Avalonia.Threading.Dispatcher.UIThread.Post(() => StatusMessage = LocalizationService.Instance.GetString("Status.CreatingBackup"));
-                var backupManager = new BackupManager();
-                if (selectedFiles.Length > 0)
-                {
-                    currentBackupTimestamp = backupManager.CreateBackup(targetPath, backupName);
-                    Log(LocalizationService.Instance.GetString("Log.BackupCreated", currentBackupTimestamp));
-                }
-
+                var originals = new OriginalResourceManager();
+                originals.OnLog += Log;
+                originals.OnProgress += percent => Avalonia.Threading.Dispatcher.UIThread.Post(() => { IsIndeterminate = false; Progress = percent; });
+                string originalPackage = await originals.EnsurePackageAsync(SelectedBranch, _injectCts.Token);
+                Avalonia.Threading.Dispatcher.UIThread.Post(() => StatusMessage = LocalizationService.Instance.GetString("Status.PreparingOriginals"));
+                workspace = originals.PrepareWorkspace(targetPath, originalPackage, _injectCts.Token);
 
                 // 2. Perform Injection
                 Avalonia.Threading.Dispatcher.UIThread.Post(() => {
@@ -370,7 +362,7 @@ public partial class MainViewModel : ObservableObject
                     IsIndeterminate = false;
                 });
 
-                var patcher = new CsvInjector();
+                var patcher = new CsvInjector { AbortOnFailure = true };
                 patcher.OnLog += (msg) => {
                     Avalonia.Threading.Dispatcher.UIThread.Post(() => Log(msg));
                 };
@@ -397,12 +389,15 @@ public partial class MainViewModel : ObservableObject
                 
                 // Note: SelectedLanguage is GameLanguage enum (jp/en/de/fr)
                 if (selectedFiles.Length > 0)
-                    patcher.Inject(targetPath, _csvResourcePath, SelectedLanguage, fileFilter, null, progress, _injectCts.Token, useCompatibilityMode);
+                    patcher.Inject(workspace!, _csvResourcePath, SelectedLanguage, fileFilter, null, progress, _injectCts.Token, useCompatibilityMode);
                 _injectCts.Token.ThrowIfCancellationRequested();
-                if (imageResources) imageManager.Install(targetPath, imagePackage!);
-                else imageManager.Uninstall(targetPath);
-                
-                success = true;
+                Avalonia.Threading.Dispatcher.UIThread.Post(() => StatusMessage = LocalizationService.Instance.GetString("Status.Committing"));
+                originals.Commit(targetPath, workspace!, () =>
+                {
+                    if (imageResources) imageManager.Install(targetPath, imagePackage!);
+                    else imageManager.Uninstall(targetPath);
+                }, _injectCts.Token, preserveFonts: !applyFonts);
+
                 Avalonia.Threading.Dispatcher.UIThread.Post(() => {
                     Progress = 100;
                     IsIndeterminate = false;
@@ -418,17 +413,8 @@ public partial class MainViewModel : ObservableObject
                 IsIndeterminate = true;
             });
 
-            if (!string.IsNullOrEmpty(currentBackupTimestamp))
-            {
-                await Task.Run(() => {
-                    var backupManager = new BackupManager();
-                    backupManager.RestoreBackup(targetPath, currentBackupTimestamp);
-                });
-            }
-
             Avalonia.Threading.Dispatcher.UIThread.Post(() => {
-                StatusMessage = LocalizationService.Instance.GetString("Status.RollbackComplete");
-                Log(LocalizationService.Instance.GetString("Log.RollbackComplete"));
+                StatusMessage = LocalizationService.Instance.GetString("Status.CancelledUnchanged");
                 IsIndeterminate = false;
             });
         }
@@ -444,68 +430,8 @@ public partial class MainViewModel : ObservableObject
         }
         finally
         {
-            if (success && !string.IsNullOrEmpty(currentBackupTimestamp))
-            {
-                bool keepBackup = true;
-                if (OnRequestBackupRetention != null)
-                {
-                    // Call on UI thread
-                    var tcs = new TaskCompletionSource<bool>();
-                    Avalonia.Threading.Dispatcher.UIThread.Post(async () => {
-                        bool result = await OnRequestBackupRetention();
-                        tcs.SetResult(result);
-                    });
-                    keepBackup = await tcs.Task;
-                }
-
-                if (!keepBackup)
-            {
-                // Check if this is the only backup
-                var backups = new BackupManager().GetBackups();
-                if (backups.Count <= 1 && OnRequestBackupDeletionWarning != null)
-                {
-                    bool confirmDelete = await OnRequestBackupDeletionWarning();
-                    if (!confirmDelete)
-                    {
-                        keepBackup = true;
-                    }
-                }
-
-                if (!keepBackup)
-                {
-                    Log(LocalizationService.Instance.GetString("Log.DeletingBackup", currentBackupTimestamp));
-                    new BackupManager().DeleteBackup(currentBackupTimestamp);
-                }
-            }
-            
-            if (keepBackup)    
-                {
-                    // Offer to rename if keeping
-                    if (OnRequestInput != null) 
-                    {
-                        var tcs = new TaskCompletionSource<string?>();
-                        Avalonia.Threading.Dispatcher.UIThread.Post(async () => {
-                             var result = await OnRequestInput(
-                                 LocalizationService.Instance.GetString("Input.BackupName.Title"), 
-                                 LocalizationService.Instance.GetString("Input.BackupName.Message"),
-                                 currentBackupTimestamp);
-                             tcs.SetResult(result);
-                        });
-                        string? newName = await tcs.Task;
-
-                        if (!string.IsNullOrWhiteSpace(newName) && newName != currentBackupTimestamp)
-                        {
-                            try {
-                                new BackupManager().RenameBackup(currentBackupTimestamp, newName);
-                                Log(LocalizationService.Instance.GetString("Log.BackupRenamed", currentBackupTimestamp, newName));
-                            } catch (Exception ex) {
-                                Log(LocalizationService.Instance.GetString("Log.RenameError", ex.Message));
-                            }
-                        }
-                    }
-                }
-            }
-
+            try { if (workspace != null) OriginalResourceManager.CleanupWorkspace(workspace); }
+            catch (Exception ex) { Log("임시 작업 폴더 정리 실패: " + ex.Message); }
             IsInjecting = false;
             _injectCts?.Dispose();
             _injectCts = null;
@@ -515,134 +441,56 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task Restore()
     {
-        if (IsRestoring) return;
-        IsRestoring = true;
-
-        string targetPath = GetActualGamePath();
-
+        if (IsRestoring || IsInjecting || IsDownloadingResources) return;
         if (!IsGamePathValid)
         {
             StatusMessage = LocalizationService.Instance.GetString("Status.SelectGamePathFirst");
             return;
         }
-
-        StatusMessage = LocalizationService.Instance.GetString("Status.LoadingBackups");
-        await Task.Run(async () => 
+        IsRestoring = true;
+        HasFailed = false;
+        IsIndeterminate = true;
+        string targetPath = GetActualGamePath();
+        string? workspace = null;
+        try
         {
-            try 
+            bool? keepFonts = OnRequestRestoreConfirmation == null ? null : await OnRequestRestoreConfirmation();
+            if (keepFonts == null)
             {
-                var backupManager = new BackupManager();
-                // Pass initial backup list to selection delegate
-                var backups = backupManager.GetBackups();
-                
-                // Define handlers for the window to use
-                Action<string> deleteHandler = (id) => {
-                    StatusMessage = LocalizationService.Instance.GetString("Status.DeletingBackup", id);
-                    Log(LocalizationService.Instance.GetString("Log.DeletingBackup", id));
-                    backupManager.DeleteBackup(id);
-                    StatusMessage = LocalizationService.Instance.GetString("Status.BackupDeleted");
-                };
-
-                Action<string, string> renameHandler = (id, newName) => {
-                    try 
-                    {
-                        backupManager.RenameBackup(id, newName);
-                        Log(LocalizationService.Instance.GetString("Log.BackupRenamed", id, newName));
-                        StatusMessage = LocalizationService.Instance.GetString("Status.BackupRenamed");
-                    }
-                    catch (Exception ex)
-                    {
-                        Log(LocalizationService.Instance.GetString("Log.RenameError", ex.Message));
-                        StatusMessage = LocalizationService.Instance.GetString("Status.Error", ex.Message);
-                    }
-                };
-
-                // The delegate returns the selected ID for restore
-                string? selectedBackup = null;
-                if (OnRequestBackupSelection != null)
-                {
-                    // Invoke selection delegate on UI thread
-                    
-                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () => {
-                         selectedBackup = await OnRequestBackupSelection(backups, deleteHandler, renameHandler, () => backupManager.GetBackups());
-                    });
-                }
-
-                if (!string.IsNullOrEmpty(selectedBackup))
-                {
-                    StatusMessage = LocalizationService.Instance.GetString("Status.RestoringBackup", selectedBackup);
-                    Log(LocalizationService.Instance.GetString("Log.StartingRestore", selectedBackup));
-                    
-                    bool restored = false;
-                    await Task.Run(() =>
-                    {
-                        try
-                        {
-                            backupManager.RestoreBackup(targetPath, selectedBackup);
-                            restored = true;
-                            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-                            {
-                                StatusMessage = LocalizationService.Instance.GetString("Status.RestoreSuccess");
-                                Log(LocalizationService.Instance.GetString("Log.RestoreSuccess", selectedBackup));
-                            });
-                        }
-                        catch (Exception ex)
-                        {
-                            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-                            {
-                                StatusMessage = LocalizationService.Instance.GetString("Status.RestoreFailed", ex.Message);
-                                Log(LocalizationService.Instance.GetString("Log.RestoreError", ex.Message));
-                            });
-                        }
-                    });
-                    if (restored && IconResourceManager.HasInstallation(targetPath) && OnRequestImageRemovalConfirmation != null)
-                    {
-                        bool removeImages = await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(OnRequestImageRemovalConfirmation);
-                        if (removeImages)
-                        {
-                            try
-                            {
-                                await Task.Run(() =>
-                                {
-                                    var images = new IconResourceManager();
-                                    images.OnLog += Log;
-                                    images.Uninstall(targetPath);
-                                });
-                                Avalonia.Threading.Dispatcher.UIThread.Post(() => StatusMessage = LocalizationService.Instance.GetString("Status.RestoreAndImagesRemoved"));
-                            }
-                            catch (Exception ex)
-                            {
-                                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-                                {
-                                    StatusMessage = LocalizationService.Instance.GetString("Status.ImageRemovalFailed", ex.Message);
-                                    Log(StatusMessage);
-                                });
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                     Avalonia.Threading.Dispatcher.UIThread.Post(() => StatusMessage = LocalizationService.Instance.GetString("Status.RestoreCancelled"));
-                }
+                StatusMessage = LocalizationService.Instance.GetString("Status.RestoreCancelled");
+                return;
             }
-            catch (Exception ex)
+            await Task.Run(async () =>
             {
-                Avalonia.Threading.Dispatcher.UIThread.Post(() => 
-                {
-                    StatusMessage = LocalizationService.Instance.GetString("Status.Error", ex.Message);
-                    Log(LocalizationService.Instance.GetString("Log.ErrorLoadingBackups", ex.Message));
-                });
-            }
-            finally
-            {
-                IsRestoring = false;
-            }
-        });
+                var images = new IconResourceManager();
+                images.OnLog += Log;
+                if (IconResourceManager.HasInstallation(targetPath)) IconResourceManager.CheckInstallation(targetPath);
+                var originals = new OriginalResourceManager();
+                originals.OnLog += Log;
+                originals.OnProgress += percent => Avalonia.Threading.Dispatcher.UIThread.Post(() => { IsIndeterminate = false; Progress = percent; });
+                string package = await originals.EnsurePackageAsync(SelectedBranch);
+                Avalonia.Threading.Dispatcher.UIThread.Post(() => StatusMessage = LocalizationService.Instance.GetString("Status.RestoringOriginals"));
+                workspace = originals.PrepareWorkspace(targetPath, package);
+                originals.Commit(targetPath, workspace, () => images.Uninstall(targetPath), preserveFonts: keepFonts.Value);
+            });
+            Progress = 100;
+            StatusMessage = keepFonts.Value ? "텍스트 원복 및 이미지 적용 해제 완료 · 폰트 유지" : LocalizationService.Instance.GetString("Status.RestoreAndImagesRemoved");
+            Log(StatusMessage);
+        }
+        catch (Exception ex)
+        {
+            HasFailed = true;
+            StatusMessage = LocalizationService.Instance.GetString("Status.RestoreFailed", ex.Message);
+            Log(StatusMessage);
+        }
+        finally
+        {
+            try { if (workspace != null) OriginalResourceManager.CleanupWorkspace(workspace); }
+            catch (Exception ex) { Log("임시 작업 폴더 정리 실패: " + ex.Message); }
+            IsIndeterminate = false;
+            IsRestoring = false;
+        }
     }
-
-    // Func<InitialList, DeleteHandler, RenameHandler, ListProvider, ResultTask>
-    public Func<List<string>, Action<string>, Action<string, string>, Func<List<string>>, Task<string?>>? OnRequestBackupSelection { get; set; }
 
     private readonly System.Collections.Concurrent.ConcurrentQueue<string> _logQueue = new();
     private bool _isLogUpdating = false;

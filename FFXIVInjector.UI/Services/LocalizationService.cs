@@ -17,24 +17,10 @@ public class LocalizationService : INotifyPropertyChanged
     public static LocalizationService Instance => _instance ??= new LocalizationService();
 
     private Dictionary<string, string> _currentStrings = new();
-    private string _currentLanguage = "ko";
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    public string CurrentLanguage
-    {
-        get => _currentLanguage;
-        set
-        {
-            if (_currentLanguage != value)
-            {
-                _currentLanguage = value;
-                LoadLanguage(value);
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CurrentLanguage)));
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("Item"));
-            }
-        }
-    }
+    public string CurrentLanguage => "ko";
 
     [System.Runtime.CompilerServices.IndexerName("Item")]
     public string this[string key]
@@ -65,30 +51,23 @@ public class LocalizationService : INotifyPropertyChanged
 
     private LocalizationService()
     {
-        LoadLanguage(_currentLanguage);
+        LoadLanguage();
     }
 
-    public void LoadLanguage(string langCode)
+    private void LoadLanguage()
     {
         try
         {
             var newStrings = new Dictionary<string, string>();
             var assembly = Assembly.GetExecutingAssembly();
 
-            // Load English base, then overlay target language
-            string enResource = "FFXIVInjector.UI.Assets.Languages.en.json";
-            LoadFromResource(assembly, enResource, newStrings);
-            if (langCode != "en")
-            {
-                string targetResource = $"FFXIVInjector.UI.Assets.Languages.{langCode}.json";
-                LoadFromResource(assembly, targetResource, newStrings);
-            }
+            LoadFromResource(assembly, "FFXIVInjector.UI.Assets.Languages.ko.json", newStrings);
 
             _currentStrings = newStrings;
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Error loading language {langCode}: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"Error loading Korean UI: {ex.Message}");
         }
     }
 

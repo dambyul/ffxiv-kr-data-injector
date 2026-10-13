@@ -8,7 +8,7 @@ using System.Collections.Generic;
 
 namespace FFXIVInjector.Core;
 
-public enum ResourceType { CSV, Font }
+public enum ResourceType { CSV, Font, Original }
 public enum ResourceStatus { Checking, Downloading, Extracting, Ready, Error }
 
 public class S3ResourceManager
@@ -66,11 +66,18 @@ public class S3ResourceManager
                 OnLog?.Invoke($"Failed to check Font version: {ex.Message}");
                 anyCheckFailed = true;
             }
+            try {
+                var originalTask = await GetUpdateTaskAsync(client, branch, ResourceType.Original);
+                if (originalTask != null) updateTasks.Insert(0, originalTask);
+            } catch (Exception ex) {
+                OnLog?.Invoke($"Failed to check original files: {ex.Message}");
+                anyCheckFailed = true;
+            }
 
             if (anyCheckFailed)
             {
                 OnStatusChanged?.Invoke(ResourceStatus.Error);
-                return true; 
+                throw new InvalidOperationException("Resource version check failed.");
             }
 
             if (updateTasks.Count == 0)
@@ -93,13 +100,14 @@ public class S3ResourceManager
                 await ExecuteUpdateAsync(client, task, branch);
             }
 
+            OnStatusChanged?.Invoke(ResourceStatus.Ready);
             return true;
         }
         catch (Exception ex)
         {
             OnLog?.Invoke($"Major error during resource check: {ex.Message}");
             OnStatusChanged?.Invoke(ResourceStatus.Error);
-            return true;
+            throw;
         }
     }
 
@@ -110,17 +118,18 @@ public class S3ResourceManager
         
         string versionFile = type switch {
             ResourceType.CSV => branch == ResourceBranch.Stable ? "version.txt" : "dev-version.txt",
+            ResourceType.Original => "version.txt",
             ResourceType.Font  => branch == ResourceBranch.Stable ? "font-version.txt" : "dev-font-version.txt",
             _ => throw new ArgumentException()
         };
 
-        string remoteVersionUrl = $"{BaseUrl}{versionFile}";
+        string remoteVersionUrl = $"{BaseUrl}{versionFile}?t={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
         string remoteRaw = (await client.GetStringAsync(remoteVersionUrl)).Trim();
         string remoteVersionStr = "0.0.0.0.0";
 
         if (!string.IsNullOrEmpty(remoteRaw))
         {
-            string targetBranchStr = branch.ToString().ToLower();
+            string targetBranchStr = (type == ResourceType.Original ? ResourceBranch.Stable : branch).ToString().ToLower();
             var lines = remoteRaw.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
                                  .Select(l => l.Trim())
                                  .Where(l => !string.IsNullOrEmpty(l));
@@ -144,6 +153,7 @@ public class S3ResourceManager
 
         string infoFileName = type == ResourceType.CSV ? "version.txt" : "font-version.txt";
         string localInfoPath = Path.Combine(PathConstants.ResourcesRoot, infoFileName);
+        if (type == ResourceType.Original) localInfoPath = OriginalResourceManager.VersionPath(branch);
         string localVersionStr = "0.0.0.0.0";
 
         if (File.Exists(localInfoPath))
@@ -172,7 +182,7 @@ public class S3ResourceManager
 
         OnLog?.Invoke($"  - Local: {localVersionStr} | Remote: {remoteVersionStr}");
 
-        if (remoteVersion > localVersion)
+        if (remoteVersion > localVersion || type == ResourceType.Original && remoteVersionStr != localVersionStr)
         {
             OnLog?.Invoke($"New {type} version available: {remoteVersionStr} (Branch: {branch})");
             string extractionPath = type == ResourceType.CSV ? PathConstants.CsvPath : PathConstants.FontPath;
@@ -187,6 +197,7 @@ public class S3ResourceManager
                 ZipFileName = type switch {
                     ResourceType.CSV => branch == ResourceBranch.Stable ? "rawexd.zip" : "dev-rawexd.zip",
                     ResourceType.Font => branch == ResourceBranch.Stable ? "font.zip" : "dev-font.zip",
+                    ResourceType.Original => "original.zip",
                     _ => throw new ArgumentException()
                 },
                 IsCsv = type == ResourceType.CSV
@@ -200,6 +211,15 @@ public class S3ResourceManager
     {
         try
         {
+            if (task.Type == ResourceType.Original)
+            {
+                OnStatusChanged?.Invoke(ResourceStatus.Downloading);
+                var originals = new OriginalResourceManager();
+                originals.OnLog += message => OnLog?.Invoke(message);
+                originals.OnProgress += value => OnProgressChanged?.Invoke(value);
+                await originals.EnsurePackageAsync(branch, expectedVersion: task.RemoteVersion);
+                return;
+            }
             if (string.IsNullOrEmpty(task.ZipFileName) || string.IsNullOrEmpty(task.ExtractionPath)) return;
 
             string zipUrl = $"{BaseUrl}{task.ZipFileName}?t={DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
@@ -220,12 +240,8 @@ public class S3ResourceManager
             if (task.IsCsv)
             {
                 string dataJsonUrl = $"{BaseUrl}data.json?t={DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
-                try 
-                {
-                    byte[] jsonData = await client.GetByteArrayAsync(dataJsonUrl);
-                    await File.WriteAllBytesAsync(PathConstants.DataJsonPath, jsonData);
-                }
-                catch {}
+                byte[] jsonData = await client.GetByteArrayAsync(dataJsonUrl);
+                await File.WriteAllBytesAsync(PathConstants.DataJsonPath, jsonData);
             }
 
             if (!string.IsNullOrEmpty(task.LocalInfoPath))
@@ -239,6 +255,7 @@ public class S3ResourceManager
         {
             OnLog?.Invoke($"Error during {task.Type} update: {ex.Message}");
             OnStatusChanged?.Invoke(ResourceStatus.Error);
+            throw;
         }
     }
 

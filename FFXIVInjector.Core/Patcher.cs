@@ -22,6 +22,7 @@ public interface IPatcher
 public class CsvInjector : IPatcher
 {
     public event Action<string>? OnLog;
+    public bool AbortOnFailure { get; set; }
 
     private class DataJson
     {
@@ -275,6 +276,7 @@ public class CsvInjector : IPatcher
                             }
                         } catch (Exception ex) {
                             OnLog?.Invoke($"    [Error] Failed to reconstruct {sheetName}: {ex}");
+                            if (AbortOnFailure) throw;
                             skippedCount++;
                         }
                     }
@@ -362,6 +364,7 @@ public class CsvInjector : IPatcher
                         OnLog?.Invoke($"  [{ (iq.isTex ? "TEX" : "CSV") }] {iq.target} -> Success");
                     } catch (Exception ex) { 
                         OnLog?.Invoke($"  [Error] Failed to inject {iq.target}: {ex.Message}"); 
+                        if (AbortOnFailure) throw;
                     }
                     
                     currentInjection++;

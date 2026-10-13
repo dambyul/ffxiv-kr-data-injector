@@ -295,6 +295,16 @@ public sealed class IconResourceManager
             UniqueFiles = manifest.Entries.Select(e => e.CacheFile).Distinct().Count() };
         var files = ValidateManifest(manifest, release);
         foreach (var pair in files) VerifyTexture(Path.Combine(package, pair.Key), pair.Value);
+        if (HasInstallation(game) && Hash(Path.Combine(game, "dinput8.dll")) == Convert.ToHexStringLower(SHA256.HashData(LoaderBytes())))
+        {
+            var existingIni = File.ReadAllLines(Path.Combine(game, "resource-swap.ini"));
+            var expected = manifest.Entries.Select(e => $"{e.Target}\t{Path.GetFullPath(Path.Combine(package, e.CacheFile))}\t{e.Sha256}");
+            if (existingIni.Length >= 2 && existingIni[1] == exeHash && File.Exists(existingIni[0]) && File.ReadAllLines(existingIni[0]).SequenceEqual(expected))
+            {
+                OnLog?.Invoke("기존 한국어 이미지 로더와 매핑을 유지합니다.");
+                return;
+            }
+        }
         string runtime = Path.Combine(cacheRoot, "runtime", Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(game))));
         Directory.CreateDirectory(runtime);
         string map = Path.Combine(runtime, "mappings-" + Guid.NewGuid().ToString("N") + ".tsv");

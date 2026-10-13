@@ -1,0 +1,22 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="FFXIVInjector.UI.Views.RestoreWindow"
+        Title="복원" Width="420" SizeToContent="Height"
+        CanResize="False" WindowStartupLocation="CenterOwner"
+        SystemDecorations="Full" ExtendClientAreaToDecorationsHint="True">
+    <Grid RowDefinitions="Auto,Auto" Margin="20">
+        <StackPanel Grid.Row="0" Margin="0,0,0,16">
+            <TextBlock Text="복원하기" FontSize="24" FontWeight="Bold" />
+            <TextBlock Text="순정 상태로 복원합니다 (창을 닫아 취소)" FontSize="14" Opacity="0.6" Margin="0,8,0,0" />
+        </StackPanel>
+        <Grid Grid.Row="1" ColumnDefinitions="*,14,*">
+            <Button Name="RemoveFontButton" Content="폰트 제거" Grid.Column="0"
+                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                    Height="42" CornerRadius="6" Background="#D32F2F" Foreground="White" FontWeight="Bold" />
+            <Button Name="KeepFontButton" Content="폰트 유지" Grid.Column="2"
+                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                    Height="42" CornerRadius="6" Background="{DynamicResource SystemControlBackgroundAccentBrush}"
+                    Foreground="White" FontWeight="Bold" />
+        </Grid>
+    </Grid>
+</Window>

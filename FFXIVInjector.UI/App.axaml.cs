@@ -55,69 +55,15 @@ public partial class App : Application
                 }
             };
 
-            vm.OnRequestBackupDeletionWarning = async () =>
-            {
-                if (desktop.MainWindow == null) return false;
-                return await ConfirmWindow.ShowConfirmDialog(
-                    desktop.MainWindow,
-                    title: Services.LocalizationService.Instance.GetString("Warning.LastBackup.Title"),
-                    message: Services.LocalizationService.Instance.GetString("Warning.LastBackup.Message"),
-                    yesText: Services.LocalizationService.Instance.GetString("Button.Ok"),
-                    noText: Services.LocalizationService.Instance.GetString("BackupWindow.Button.Cancel")
-                );
-            };
-            vm.OnRequestBackupSelection = async (backups, deleteHandler, renameHandler, listProvider) =>
-            {
-                var dialog = new BackupSelectionWindow();
-                dialog.SetBackups(backups);
-                dialog.ListProvider = listProvider;
-                dialog.OnDeleteRequest = deleteHandler;
-                dialog.OnRenameRequest = renameHandler;
-                
-                if (desktop.MainWindow == null) 
-                {
-                    return null;
-                }
-                
-                var result = await dialog.ShowDialog<BackupSelectionResult?>(desktop.MainWindow);
-                // Handle result: Return ID only if Restore action (Type 0) confirmed.
-                
-                if (result != null && result.ActionType == 0)
-                {
-                    return result.BackupId;
-                }
-                
-                return null;
-            };
-
             vm.OnRequestUpdateConfirmation = async () =>
             {
                 if (desktop.MainWindow == null) return false;
                 return await ConfirmWindow.ShowConfirmDialog(desktop.MainWindow);
             };
-
-            vm.OnRequestImageRemovalConfirmation = async () =>
+            vm.OnRequestRestoreConfirmation = async () =>
             {
-                if (desktop.MainWindow == null) return false;
-                return await ConfirmWindow.ShowConfirmDialog(
-                    desktop.MainWindow,
-                    title: Services.LocalizationService.Instance.GetString("Images.Remove.Title"),
-                    message: Services.LocalizationService.Instance.GetString("Images.Remove.Message"),
-                    yesText: Services.LocalizationService.Instance.GetString("Images.Remove.Yes"),
-                    noText: Services.LocalizationService.Instance.GetString("Images.Remove.No")
-                );
-            };
-
-            vm.OnRequestBackupRetention = async () =>
-            {
-                if (desktop.MainWindow == null) return true;
-                return await ConfirmWindow.ShowConfirmDialog(
-                    desktop.MainWindow,
-                    title: Services.LocalizationService.Instance.GetString("BackupRetention.Title"),
-                    message: Services.LocalizationService.Instance.GetString("BackupRetention.Message"),
-                    yesText: Services.LocalizationService.Instance.GetString("BackupRetention.Button.Yes"),
-                    noText: Services.LocalizationService.Instance.GetString("BackupRetention.Button.No")
-                );
+                if (desktop.MainWindow == null) return null;
+                return await RestoreWindow.ShowRestoreDialog(desktop.MainWindow);
             };
 
             vm.OnRequestCoverage = async () =>
@@ -126,12 +72,6 @@ public partial class App : Application
                 
                 if (desktop.MainWindow == null) return null;
                 return await Views.CoverageWindow.ShowDialog(desktop.MainWindow, resourcePath);
-            };
-
-            vm.OnRequestInput = async (title, message, defaultValue) =>
-            {
-                if (desktop.MainWindow == null) return null;
-                return await InputWindow.ShowInputDialog(desktop.MainWindow, title, message, defaultValue);
             };
 
             vm.OnRequestClose = () =>

@@ -70,17 +70,6 @@
                 </Button>
             </StackPanel>
             
-            <!-- UI Language Switcher (Compact) -->
-            <ComboBox Grid.Column="1" VerticalAlignment="Top" Width="70" Height="30"
-                      SelectedItem="{Binding Source={x:Static services:LocalizationService.Instance}, Path=CurrentLanguage}"
-                      ItemsSource="{Binding AvailableLanguages}"
-                      BorderThickness="0" Background="Transparent" Opacity="0.7">
-                <ComboBox.Styles>
-                    <Style Selector="ComboBox:pointerover">
-                        <Setter Property="Opacity" Value="1"/>
-                    </Style>
-                </ComboBox.Styles>
-            </ComboBox>
         </Grid>
 
         <!-- Row 1: Fixed Form Elements -->

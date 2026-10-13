@@ -13,9 +13,13 @@ dotnet publish FFXIVInjector.UI `
     -r win-x64 `
     -p:PublishSingleFile=true `
     -p:SelfContained=true `
-    --self-contained true
+    --self-contained true `
+    -o "$PSScriptRoot\publish"
+
+if ($LASTEXITCODE -ne 0) { throw "Injector publish failed." }
+Copy-Item -LiteralPath "$PSScriptRoot\publish\FFXIVInjector.UI.exe" -Destination "$PSScriptRoot\publish\FFXIVInjector.exe" -Force
 
 Write-Host "-------------------------------------------------------" -ForegroundColor Green
 Write-Host "Build Complete!" -ForegroundColor Green
-Write-Host "Main Executable: .\FFXIVInjector.UI\bin\Release\net10.0\win-x64\publish\FFXIVInjector.UI.exe" -ForegroundColor Green
+Write-Host "Main Executable: $PSScriptRoot\publish\FFXIVInjector.exe" -ForegroundColor Green
 Write-Host "-------------------------------------------------------" -ForegroundColor Green
