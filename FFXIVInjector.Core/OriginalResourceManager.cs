@@ -13,6 +13,8 @@ public sealed class OriginalResourceManager
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
     public event Action<string>? OnLog;
     public event Action<double>? OnProgress;
+    public Func<string, string, Task<bool>>? OnClientVersionMismatch { get; set; }
+    private bool allowGlobalVersionMismatch;
     public sealed class Release
     {
         public int SchemaVersion { get; set; }
@@ -41,12 +43,12 @@ public sealed class OriginalResourceManager
         using var stream = File.OpenRead(file);
         return Convert.ToHexStringLower(SHA256.HashData(stream));
     }
-    private static Manifest Validate(string package, string? globalVersion = null)
+    private static Manifest Validate(string package, string? globalVersion = null, bool allowVersionMismatch = false)
     {
         var manifest = JsonSerializer.Deserialize<Manifest>(File.ReadAllText(Path.Combine(package, "manifest.json")), Json)
             ?? throw new InvalidDataException("원본 파일 목록이 없습니다.");
         if (manifest.SchemaVersion != 1 || !Regex.IsMatch(manifest.GlobalVersion, @"^\d{4}\.\d{2}\.\d{2}\.\d{4}\.\d{4}$") ||
-            globalVersion != null && manifest.GlobalVersion != globalVersion ||
+            globalVersion != null && !allowVersionMismatch && manifest.GlobalVersion != globalVersion ||
             !manifest.Files.Select(f => f.Name).Order().SequenceEqual(FileNames.Order()))
             throw new InvalidDataException("원본 파일 목록 또는 글로벌 버전이 일치하지 않습니다.");
         foreach (var file in manifest.Files)
@@ -85,6 +87,12 @@ public sealed class OriginalResourceManager
         if (release == null || release.SchemaVersion != 1 || release.TextVersion != version ||
             release.ArchiveKey != "original.zip" || !Regex.IsMatch(release.Sha256, "^[0-9a-f]{64}$") || release.Bytes <= 0 || release.UnpackedBytes <= 0)
             throw new InvalidDataException("원본 패키지의 공유 버전 또는 메타데이터가 일치하지 않습니다.");
+        if (release.GlobalVersion != version)
+        {
+            bool proceed = OnClientVersionMismatch != null && await OnClientVersionMismatch(release.GlobalVersion, version);
+            if (!proceed) throw new OperationCanceledException(ct);
+            allowGlobalVersionMismatch = true;
+        }
         string package = Path.Combine(PathConstants.OriginalPackagePath, release.Sha256);
         bool valid = false;
         if (Directory.Exists(package))
@@ -155,7 +163,7 @@ public sealed class OriginalResourceManager
         if (GameProcess.IsRunning()) throw new InvalidOperationException("게임을 종료한 뒤 복원해 주세요.");
         string game = Path.GetFullPath(gamePath);
         var version = File.ReadAllText(Path.Combine(game, "ffxivgame.ver")).Trim();
-        var manifest = Validate(package, version);
+        var manifest = Validate(package, version, allowGlobalVersionMismatch);
         string destination = Path.Combine(game, "sqpack", "ffxiv");
         if (!Directory.Exists(destination)) throw new DirectoryNotFoundException(destination);
         // Check all existing targets before preparing replacements. Patched data is never backed up.

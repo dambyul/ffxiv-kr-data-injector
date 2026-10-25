@@ -60,6 +60,16 @@ public partial class App : Application
                 if (desktop.MainWindow == null) return false;
                 return await ConfirmWindow.ShowConfirmDialog(desktop.MainWindow);
             };
+            vm.OnRequestClientVersionMismatch = async (resourceVersion, gameVersion) =>
+            {
+                if (desktop.MainWindow == null) return false;
+                return await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => ConfirmWindow.ShowConfirmDialog(
+                    desktop.MainWindow,
+                    "리소스 버전 확인",
+                    "현재 게임 버전과 리소스 버전이 불일치합니다.\n마이너 패치가 아닌 경우 적용 후 문제가 발생할 수 있습니다.",
+                    "확인",
+                    "취소"));
+            };
             vm.OnRequestRestoreConfirmation = async () =>
             {
                 if (desktop.MainWindow == null) return null;

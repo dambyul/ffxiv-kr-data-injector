@@ -19,6 +19,7 @@ public sealed class IconResourceManager
     public event Action<string>? OnLog;
     public event Action<double>? OnProgress;
     public event Action<string>? OnStatus;
+    public Func<string, string, Task<bool>>? OnClientVersionMismatch { get; set; }
     public sealed class Release
     {
         public int SchemaVersion { get; set; }
@@ -68,9 +69,9 @@ public sealed class IconResourceManager
     {
         if (GameProcess.IsRunning()) throw new InvalidOperationException("게임을 종료한 뒤 리소스를 적용하거나 해제해 주세요.");
     }
-    public static void ValidateRelease(Release release, string version, string channel)
+    public static void ValidateRelease(Release release, string version, string channel, bool allowClientVersionMismatch = false)
     {
-        if (release.SchemaVersion != 1 || release.Kind != "icons-12" || release.GlobalVersion != version ||
+        if (release.SchemaVersion != 1 || release.Kind != "icons-12" || (!allowClientVersionMismatch && release.GlobalVersion != version) ||
             release.Channel != channel || !VersionPattern.IsMatch(version) || !VersionPattern.IsMatch(release.KoreanVersion) ||
             !DigestPattern.IsMatch(release.Sha256) || !DigestPattern.IsMatch(release.GlobalExecutableSha256) ||
             release.Bytes is <= 0 or > 1073741824 || release.UnpackedBytes is <= 0 or > 8589934592 ||
@@ -190,10 +191,13 @@ public sealed class IconResourceManager
         }
         if (json.Length > 65536) throw new InvalidDataException("Oversized release descriptor");
         var release = JsonSerializer.Deserialize<Release>(json, Json) ?? throw new InvalidDataException("Empty release");
-        ValidateRelease(release, version, channel);
+        if (release.GlobalVersion != version)
+        {
+            bool proceed = OnClientVersionMismatch != null && await OnClientVersionMismatch(release.GlobalVersion, version);
+            if (!proceed) throw new OperationCanceledException(ct);
+        }
+        ValidateRelease(release, version, channel, allowClientVersionMismatch: true);
         if (release.TextVersion != remoteVersion) throw new InvalidDataException("Text/image release versions differ; retry after publication completes");
-        if (Hash(Path.Combine(game, "ffxiv_dx11.exe")) != release.GlobalExecutableSha256)
-            throw new InvalidOperationException("패키지가 지원하는 글로벌 실행 파일과 다릅니다. 해당 버전용 패키지가 필요합니다.");
         Directory.CreateDirectory(cacheRoot);
         string package = Path.Combine(cacheRoot, release.Sha256);
         if (Directory.Exists(package))
@@ -290,8 +294,8 @@ public sealed class IconResourceManager
         var manifest = Read<Manifest>(Path.Combine(package, "manifest.json"));
         string version = File.ReadAllText(Path.Combine(game, "ffxivgame.ver")).Trim();
         string exeHash = Hash(Path.Combine(game, "ffxiv_dx11.exe"));
-        var release = new Release { Kind = "icons-12", GlobalVersion = version, KoreanVersion = manifest.KoreanVersion,
-            GlobalExecutableSha256 = exeHash, Mappings = manifest.Entries.Length,
+        var release = new Release { Kind = "icons-12", GlobalVersion = manifest.GlobalVersion, KoreanVersion = manifest.KoreanVersion,
+            GlobalExecutableSha256 = manifest.GlobalExecutableSha256, Mappings = manifest.Entries.Length,
             UniqueFiles = manifest.Entries.Select(e => e.CacheFile).Distinct().Count() };
         var files = ValidateManifest(manifest, release);
         foreach (var pair in files) VerifyTexture(Path.Combine(package, pair.Key), pair.Value);

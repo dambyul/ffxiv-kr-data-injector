@@ -269,6 +269,7 @@ public partial class MainViewModel : ObservableObject
 
     public Action? OnRequestFolderPicker { get; set; }
     public Func<Task<bool>>? OnRequestUpdateConfirmation { get; set; }
+    public Func<string, string, Task<bool>>? OnRequestClientVersionMismatch { get; set; }
     public Func<Task<bool?>>? OnRequestRestoreConfirmation { get; set; }
     public Action? OnRequestClose { get; set; }
     public Func<Task<string[]?>>? OnRequestCoverage { get; set; }
@@ -339,9 +340,25 @@ public partial class MainViewModel : ObservableObject
                 var cvm = new CoverageViewModel(_csvResourcePath);
                 var selectedFiles = cvm.GetSelectedFiles();
                 bool applyFonts = selectedFiles.Any(path => path.Replace('\\', '/').StartsWith("font/", StringComparison.OrdinalIgnoreCase));
+                bool fontWasApplied = applyFonts;
+                if (applyFonts && FontApplicationState.IsAlreadyApplied(targetPath, selectedFiles))
+                {
+                    selectedFiles = selectedFiles.Where(path => !path.Replace('\\', '/').StartsWith("font/", StringComparison.OrdinalIgnoreCase)).ToArray();
+                    applyFonts = false;
+                    Log("이미 적용된 폰트는 다시 처리하지 않습니다.");
+                }
                 bool imageResources = cvm.ImageResourcesSelected;
                 var imageManager = new IconResourceManager();
                 imageManager.OnLog += Log;
+                bool versionMismatchConfirmed = false;
+                Func<string, string, Task<bool>> confirmVersionMismatch = async (resourceVersion, gameVersion) =>
+                {
+                    if (versionMismatchConfirmed) return true;
+                    bool result = OnRequestClientVersionMismatch != null && await OnRequestClientVersionMismatch(resourceVersion, gameVersion);
+                    versionMismatchConfirmed = result;
+                    return result;
+                };
+                imageManager.OnClientVersionMismatch = confirmVersionMismatch;
                 imageManager.OnStatus += message => Avalonia.Threading.Dispatcher.UIThread.Post(() => StatusMessage = message);
                 imageManager.OnProgress += percent => Avalonia.Threading.Dispatcher.UIThread.Post(() => { IsIndeterminate = false; Progress = percent; });
                 string? imagePackage = null;
@@ -351,6 +368,7 @@ public partial class MainViewModel : ObservableObject
 
                 var originals = new OriginalResourceManager();
                 originals.OnLog += Log;
+                originals.OnClientVersionMismatch = confirmVersionMismatch;
                 originals.OnProgress += percent => Avalonia.Threading.Dispatcher.UIThread.Post(() => { IsIndeterminate = false; Progress = percent; });
                 string originalPackage = await originals.EnsurePackageAsync(SelectedBranch, _injectCts.Token);
                 Avalonia.Threading.Dispatcher.UIThread.Post(() => StatusMessage = LocalizationService.Instance.GetString("Status.PreparingOriginals"));
@@ -397,6 +415,7 @@ public partial class MainViewModel : ObservableObject
                     if (imageResources) imageManager.Install(targetPath, imagePackage!);
                     else imageManager.Uninstall(targetPath);
                 }, _injectCts.Token, preserveFonts: !applyFonts);
+                if (fontWasApplied && applyFonts) FontApplicationState.MarkApplied(targetPath, cvm.GetSelectedFiles());
 
                 Avalonia.Threading.Dispatcher.UIThread.Post(() => {
                     Progress = 100;
@@ -468,6 +487,8 @@ public partial class MainViewModel : ObservableObject
                 var originals = new OriginalResourceManager();
                 originals.OnLog += Log;
                 originals.OnProgress += percent => Avalonia.Threading.Dispatcher.UIThread.Post(() => { IsIndeterminate = false; Progress = percent; });
+                originals.OnClientVersionMismatch = async (resourceVersion, gameVersion) =>
+                    OnRequestClientVersionMismatch != null && await OnRequestClientVersionMismatch(resourceVersion, gameVersion);
                 string package = await originals.EnsurePackageAsync(SelectedBranch);
                 Avalonia.Threading.Dispatcher.UIThread.Post(() => StatusMessage = LocalizationService.Instance.GetString("Status.RestoringOriginals"));
                 workspace = originals.PrepareWorkspace(targetPath, package);
@@ -476,6 +497,11 @@ public partial class MainViewModel : ObservableObject
             Progress = 100;
             StatusMessage = keepFonts.Value ? "텍스트 원복 및 이미지 적용 해제 완료 · 폰트 유지" : LocalizationService.Instance.GetString("Status.RestoreAndImagesRemoved");
             Log(StatusMessage);
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = LocalizationService.Instance.GetString("Status.RestoreCancelled");
+            Log(LocalizationService.Instance.GetString("Status.RestoreCancelled"));
         }
         catch (Exception ex)
         {
