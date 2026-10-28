@@ -14,7 +14,6 @@ public sealed class OriginalResourceManager
     public event Action<string>? OnLog;
     public event Action<double>? OnProgress;
     public Func<string, string, Task<bool>>? OnClientVersionMismatch { get; set; }
-    private bool allowGlobalVersionMismatch;
     public sealed class Release
     {
         public int SchemaVersion { get; set; }
@@ -87,12 +86,6 @@ public sealed class OriginalResourceManager
         if (release == null || release.SchemaVersion != 1 || release.TextVersion != version ||
             release.ArchiveKey != "original.zip" || !Regex.IsMatch(release.Sha256, "^[0-9a-f]{64}$") || release.Bytes <= 0 || release.UnpackedBytes <= 0)
             throw new InvalidDataException("원본 패키지의 공유 버전 또는 메타데이터가 일치하지 않습니다.");
-        if (release.GlobalVersion != version)
-        {
-            bool proceed = OnClientVersionMismatch != null && await OnClientVersionMismatch(release.GlobalVersion, version);
-            if (!proceed) throw new OperationCanceledException(ct);
-            allowGlobalVersionMismatch = true;
-        }
         string package = Path.Combine(PathConstants.OriginalPackagePath, release.Sha256);
         bool valid = false;
         if (Directory.Exists(package))
@@ -159,17 +152,35 @@ public sealed class OriginalResourceManager
         finally { CleanupWorkspace(workspace); }
     }
     public string PrepareWorkspace(string gamePath, string package, CancellationToken ct = default)
+        => PrepareWorkspaceCore(gamePath, package, ct);
+
+    public async Task<string> PrepareWorkspaceAsync(string gamePath, string package, CancellationToken ct = default)
+    {
+        var manifest = JsonSerializer.Deserialize<Manifest>(File.ReadAllText(Path.Combine(package, "manifest.json")), Json)
+            ?? throw new InvalidDataException("원본 파일 목록이 없습니다.");
+        string version = File.ReadAllText(Path.Combine(gamePath, "ffxivgame.ver")).Trim();
+        if (manifest.GlobalVersion != version)
+        {
+            bool proceed = OnClientVersionMismatch != null && await OnClientVersionMismatch(manifest.GlobalVersion, version);
+            if (!proceed) throw new OperationCanceledException(ct);
+        }
+        ct.ThrowIfCancellationRequested();
+        return PrepareWorkspaceCore(gamePath, package, ct, version);
+    }
+
+    private string PrepareWorkspaceCore(string gamePath, string package, CancellationToken ct, string? confirmedGameVersion = null)
     {
         if (GameProcess.IsRunning()) throw new InvalidOperationException("게임을 종료한 뒤 복원해 주세요.");
         string game = Path.GetFullPath(gamePath);
         var version = File.ReadAllText(Path.Combine(game, "ffxivgame.ver")).Trim();
-        var manifest = Validate(package, version, allowGlobalVersionMismatch);
+        var manifest = Validate(package, version, confirmedGameVersion == version);
         string destination = Path.Combine(game, "sqpack", "ffxiv");
         if (!Directory.Exists(destination)) throw new DirectoryNotFoundException(destination);
         // Check all existing targets before preparing replacements. Patched data is never backed up.
         foreach (var file in manifest.Files)
         {
             string path = Path.Combine(destination, file.Name);
+            if (!File.Exists(path)) continue;
             using var probe = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
         }
         string workspace = Path.Combine(game, ".injector-work-" + Guid.NewGuid().ToString("N"));
@@ -199,10 +210,14 @@ public sealed class OriginalResourceManager
         foreach (string name in targets)
         {
             if (!File.Exists(Path.Combine(source, name))) throw new FileNotFoundException(name);
-            using var probe = new FileStream(Path.Combine(destination, name), FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+            string target = Path.Combine(destination, name);
+            if (File.Exists(target))
+            {
+                using var probe = new FileStream(target, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+            }
         }
         ct.ThrowIfCancellationRequested();
-        var replaced = new List<(string Target, string Previous)>();
+        var replaced = new List<(string Target, string? Previous)>();
         try
         {
             // Once commit starts, finish all files. Temporary previous files exist only for rollback.
@@ -210,8 +225,16 @@ public sealed class OriginalResourceManager
             {
                 string target = Path.Combine(destination, name);
                 string previous = Path.Combine(workspace, name + ".previous");
-                File.Replace(Path.Combine(source, name), target, previous);
-                replaced.Add((target, previous));
+                if (File.Exists(target))
+                {
+                    File.Replace(Path.Combine(source, name), target, previous);
+                    replaced.Add((target, previous));
+                }
+                else
+                {
+                    File.Move(Path.Combine(source, name), target);
+                    replaced.Add((target, null));
+                }
             }
             finishImages?.Invoke();
         }
@@ -220,7 +243,11 @@ public sealed class OriginalResourceManager
             var errors = new List<Exception>();
             foreach (var (target, previous) in replaced.AsEnumerable().Reverse())
             {
-                try { File.Move(previous, target, true); }
+                try
+                {
+                    if (previous == null) File.Delete(target);
+                    else File.Move(previous, target, true);
+                }
                 catch (Exception ex) { errors.Add(ex); }
             }
             if (errors.Count > 0) throw new AggregateException("기존 상태 복구 중 오류가 발생했습니다. 복구 파일 위치: " + workspace, errors.Prepend(failure));
@@ -228,6 +255,7 @@ public sealed class OriginalResourceManager
         }
         foreach (var (_, previous) in replaced)
         {
+            if (previous == null) continue;
             try { File.Delete(previous); }
             catch (IOException ex) { OnLog?.Invoke("적용 완료 후 임시 파일 정리 실패: " + ex.Message); }
             catch (UnauthorizedAccessException ex) { OnLog?.Invoke("적용 완료 후 임시 파일 정리 실패: " + ex.Message); }

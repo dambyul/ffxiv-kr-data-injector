@@ -372,7 +372,7 @@ public partial class MainViewModel : ObservableObject
                 originals.OnProgress += percent => Avalonia.Threading.Dispatcher.UIThread.Post(() => { IsIndeterminate = false; Progress = percent; });
                 string originalPackage = await originals.EnsurePackageAsync(SelectedBranch, _injectCts.Token);
                 Avalonia.Threading.Dispatcher.UIThread.Post(() => StatusMessage = LocalizationService.Instance.GetString("Status.PreparingOriginals"));
-                workspace = originals.PrepareWorkspace(targetPath, originalPackage, _injectCts.Token);
+                workspace = await originals.PrepareWorkspaceAsync(targetPath, originalPackage, _injectCts.Token);
 
                 // 2. Perform Injection
                 Avalonia.Threading.Dispatcher.UIThread.Post(() => {
@@ -491,7 +491,7 @@ public partial class MainViewModel : ObservableObject
                     OnRequestClientVersionMismatch != null && await OnRequestClientVersionMismatch(resourceVersion, gameVersion);
                 string package = await originals.EnsurePackageAsync(SelectedBranch);
                 Avalonia.Threading.Dispatcher.UIThread.Post(() => StatusMessage = LocalizationService.Instance.GetString("Status.RestoringOriginals"));
-                workspace = originals.PrepareWorkspace(targetPath, package);
+                workspace = await originals.PrepareWorkspaceAsync(targetPath, package);
                 originals.Commit(targetPath, workspace, () => images.Uninstall(targetPath), preserveFonts: keepFonts.Value);
             });
             Progress = 100;
