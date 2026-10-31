@@ -148,13 +148,13 @@ public sealed class OriginalResourceManager
     public void Restore(string gamePath, string package, CancellationToken ct = default)
     {
         string workspace = PrepareWorkspace(gamePath, package, ct);
-        try { Commit(gamePath, workspace, null, ct); OnLog?.Invoke("폰트·텍스트 원본 7개 파일 복원 완료"); }
+        try { Commit(gamePath, workspace, null, ct); FontApplicationState.Clear(gamePath); OnLog?.Invoke("폰트·텍스트 원본 7개 파일 복원 완료"); }
         finally { CleanupWorkspace(workspace); }
     }
     public string PrepareWorkspace(string gamePath, string package, CancellationToken ct = default)
         => PrepareWorkspaceCore(gamePath, package, ct);
 
-    public async Task<string> PrepareWorkspaceAsync(string gamePath, string package, CancellationToken ct = default)
+    public async Task<string> PrepareWorkspaceAsync(string gamePath, string package, CancellationToken ct = default, bool preserveFonts = false)
     {
         var manifest = JsonSerializer.Deserialize<Manifest>(File.ReadAllText(Path.Combine(package, "manifest.json")), Json)
             ?? throw new InvalidDataException("원본 파일 목록이 없습니다.");
@@ -165,10 +165,10 @@ public sealed class OriginalResourceManager
             if (!proceed) throw new OperationCanceledException(ct);
         }
         ct.ThrowIfCancellationRequested();
-        return PrepareWorkspaceCore(gamePath, package, ct, version);
+        return PrepareWorkspaceCore(gamePath, package, ct, version, preserveFonts);
     }
 
-    private string PrepareWorkspaceCore(string gamePath, string package, CancellationToken ct, string? confirmedGameVersion = null)
+    private string PrepareWorkspaceCore(string gamePath, string package, CancellationToken ct, string? confirmedGameVersion = null, bool preserveFonts = false)
     {
         if (GameProcess.IsRunning()) throw new InvalidOperationException("게임을 종료한 뒤 복원해 주세요.");
         string game = Path.GetFullPath(gamePath);
@@ -191,7 +191,11 @@ public sealed class OriginalResourceManager
             foreach (var file in manifest.Files)
             {
                 ct.ThrowIfCancellationRequested();
-                File.Copy(Path.Combine(package, file.Name), Path.Combine(workspace, "sqpack", "ffxiv", file.Name));
+                // Reapplication resets text only; keep the installed font repository as its base.
+                string source = preserveFonts && file.Name.StartsWith("000000.", StringComparison.Ordinal)
+                    ? Path.Combine(destination, file.Name)
+                    : Path.Combine(package, file.Name);
+                File.Copy(source, Path.Combine(workspace, "sqpack", "ffxiv", file.Name));
             }
             ct.ThrowIfCancellationRequested();
             return workspace;

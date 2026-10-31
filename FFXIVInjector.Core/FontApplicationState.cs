@@ -58,4 +58,6 @@ public static class FontApplicationState
         var state = new State { GamePath = Path.GetFullPath(gamePath), Files = files };
         File.WriteAllText(StatePath(gamePath), JsonSerializer.Serialize(state));
     }
+
+    public static void Clear(string gamePath) => File.Delete(StatePath(gamePath));
 }

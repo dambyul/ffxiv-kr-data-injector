@@ -51,6 +51,25 @@ try
         Assert(File.ReadAllBytes(Path.Combine(destination, name)).SequenceEqual(pristine), "Commit must restore " + name);
     OriginalResourceManager.CleanupWorkspace(workspace);
 
+    // Reapplying text must start from the installed fonts and only reset 0a0000.
+    foreach (string name in OriginalResourceManager.FileNames)
+        File.WriteAllBytes(Path.Combine(destination, name), previous);
+    workspace = await manager.PrepareWorkspaceAsync(game, package, preserveFonts: true);
+    foreach (string name in OriginalResourceManager.FileNames)
+        Assert(File.ReadAllBytes(Path.Combine(workspace, "sqpack", "ffxiv", name)).SequenceEqual(
+            name.StartsWith("000000.") ? previous : pristine), "Reapply workspace must preserve fonts: " + name);
+    manager.Commit(game, workspace, preserveFonts: true);
+    foreach (string name in OriginalResourceManager.FileNames)
+        Assert(File.ReadAllBytes(Path.Combine(destination, name)).SequenceEqual(
+            name.StartsWith("000000.") ? previous : pristine), "Text reapply must not reset fonts: " + name);
+    OriginalResourceManager.CleanupWorkspace(workspace);
+
+    workspace = await manager.PrepareWorkspaceAsync(game, package);
+    manager.Commit(game, workspace);
+    foreach (string name in OriginalResourceManager.FileNames)
+        Assert(File.ReadAllBytes(Path.Combine(destination, name)).SequenceEqual(pristine), "Explicit full restore must reset fonts: " + name);
+    OriginalResourceManager.CleanupWorkspace(workspace);
+
     File.WriteAllText(Path.Combine(game, "ffxivgame.ver"), "2026.10.07.0000.0000");
     int prompts = 0;
     manager.OnClientVersionMismatch = (resource, client) =>

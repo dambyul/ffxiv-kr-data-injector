@@ -372,7 +372,7 @@ public partial class MainViewModel : ObservableObject
                 originals.OnProgress += percent => Avalonia.Threading.Dispatcher.UIThread.Post(() => { IsIndeterminate = false; Progress = percent; });
                 string originalPackage = await originals.EnsurePackageAsync(SelectedBranch, _injectCts.Token);
                 Avalonia.Threading.Dispatcher.UIThread.Post(() => StatusMessage = LocalizationService.Instance.GetString("Status.PreparingOriginals"));
-                workspace = await originals.PrepareWorkspaceAsync(targetPath, originalPackage, _injectCts.Token);
+                workspace = await originals.PrepareWorkspaceAsync(targetPath, originalPackage, _injectCts.Token, preserveFonts: true);
 
                 // 2. Perform Injection
                 Avalonia.Threading.Dispatcher.UIThread.Post(() => {
@@ -491,8 +491,9 @@ public partial class MainViewModel : ObservableObject
                     OnRequestClientVersionMismatch != null && await OnRequestClientVersionMismatch(resourceVersion, gameVersion);
                 string package = await originals.EnsurePackageAsync(SelectedBranch);
                 Avalonia.Threading.Dispatcher.UIThread.Post(() => StatusMessage = LocalizationService.Instance.GetString("Status.RestoringOriginals"));
-                workspace = await originals.PrepareWorkspaceAsync(targetPath, package);
+                workspace = await originals.PrepareWorkspaceAsync(targetPath, package, preserveFonts: keepFonts.Value);
                 originals.Commit(targetPath, workspace, () => images.Uninstall(targetPath), preserveFonts: keepFonts.Value);
+                if (!keepFonts.Value) FontApplicationState.Clear(targetPath);
             });
             Progress = 100;
             StatusMessage = keepFonts.Value ? "텍스트 원복 및 이미지 적용 해제 완료 · 폰트 유지" : LocalizationService.Instance.GetString("Status.RestoreAndImagesRemoved");
