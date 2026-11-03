@@ -18,6 +18,7 @@ public partial class CoverageViewModel : ObservableObject
 
     private bool _isUpdatingSelection = false;
     private bool _loadingSelection;
+    public bool VoiceResourcesSelected => Presets.Any(p => p.IsVoiceResources && p.IsChecked);
     public bool ImageResourcesSelected => Presets.Any(p => p.IsImageResources && p.IsChecked);
 
     private bool? _isAllSelected;
@@ -90,6 +91,7 @@ public partial class CoverageViewModel : ObservableObject
         public List<string> Presets { get; set; } = new();
         public bool CompatibilityMode { get; set; }
         public bool ImageResources { get; set; }
+        public bool VoiceResources { get; set; }
     }
 
     private void LoadSelection()
@@ -108,7 +110,7 @@ public partial class CoverageViewModel : ObservableObject
                     {
                         foreach (var preset in Presets)
                         {
-                            preset.IsChecked = preset.IsImageResources ? data.ImageResources : data.Presets.Contains(preset.Name);
+                            preset.IsChecked = preset.IsImageResources ? data.ImageResources : preset.IsVoiceResources ? data.VoiceResources : data.Presets.Contains(preset.Name);
                         }
                         IsCompatibilityModeEnabled = data.CompatibilityMode;
                         return;
@@ -139,8 +141,9 @@ public partial class CoverageViewModel : ObservableObject
         {
             var data = new SelectionData
             {
-                Presets = Presets.Where(p => p.IsChecked && !p.IsImageResources).Select(p => p.Name).ToList(),
+                Presets = Presets.Where(p => p.IsChecked && !p.IsImageResources && !p.IsVoiceResources).Select(p => p.Name).ToList(),
                 CompatibilityMode = IsCompatibilityModeEnabled,
+                VoiceResources = VoiceResourcesSelected,
                 ImageResources = ImageResourcesSelected
             };
             
@@ -226,6 +229,14 @@ public partial class CoverageViewModel : ObservableObject
             Preset = new CoveragePreset()
         });
 
+        Presets.Add(new PresetItemViewModel {
+            Name = localization.GetString("Coverage.Voices.Name"),
+            Description = localization.GetString("Coverage.Voices.Description"),
+            IsVoiceResources = true,
+            IsChecked = false,
+            Preset = new CoveragePreset()
+        });
+
         // Attach property change handlers for auto-save
         foreach (var preset in Presets)
         {
@@ -249,7 +260,7 @@ public partial class CoverageViewModel : ObservableObject
     public string[] GetSelectedFiles()
     {
         var result = new List<string>();
-        foreach (var item in Presets.Where(p => p.IsChecked && !p.IsImageResources))
+        foreach (var item in Presets.Where(p => p.IsChecked && !p.IsImageResources && !p.IsVoiceResources))
         {
             foreach (var entry in item.Preset.Entries)
             {

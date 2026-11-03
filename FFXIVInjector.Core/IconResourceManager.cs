@@ -287,37 +287,27 @@ public sealed class IconResourceManager
         else if ((File.Exists(dll) || File.Exists(ini) || File.Exists(Path.Combine(game, "config.xivalexinit.json"))) && !IsLegacyLoader(game))
             throw new InvalidOperationException("기존 dinput8 로더가 있습니다. 기존 설치 도구로 제거한 뒤 다시 적용해 주세요.");
     }
-    public void Install(string gamePath, string package)
+    public void Install(string gamePath, string? package, string? voicePackage = null)
     {
         CheckInstallation(gamePath);
         string game = GameDirectory(gamePath);
-        var manifest = Read<Manifest>(Path.Combine(package, "manifest.json"));
-        string version = File.ReadAllText(Path.Combine(game, "ffxivgame.ver")).Trim();
+        if (package == null && voicePackage == null) { Uninstall(game); return; }
         string exeHash = Hash(Path.Combine(game, "ffxiv_dx11.exe"));
-        var release = new Release { Kind = "icons-12", GlobalVersion = manifest.GlobalVersion, KoreanVersion = manifest.KoreanVersion,
-            GlobalExecutableSha256 = manifest.GlobalExecutableSha256, Mappings = manifest.Entries.Length,
-            UniqueFiles = manifest.Entries.Select(e => e.CacheFile).Distinct().Count() };
-        var files = ValidateManifest(manifest, release);
-        foreach (var pair in files) VerifyTexture(Path.Combine(package, pair.Key), pair.Value);
+        var selectedMappings = BuildMappings(package, voicePackage).ToList();
         if (HasInstallation(game) && Hash(Path.Combine(game, "dinput8.dll")) == Convert.ToHexStringLower(SHA256.HashData(LoaderBytes())))
         {
             var existingIni = File.ReadAllLines(Path.Combine(game, "resource-swap.ini"));
-            var expected = manifest.Entries.Select(e => $"{e.Target}\t{Path.GetFullPath(Path.Combine(package, e.CacheFile))}\t{e.Sha256}");
+            var expected = selectedMappings;
             if (existingIni.Length >= 2 && existingIni[1] == exeHash && File.Exists(existingIni[0]) && File.ReadAllLines(existingIni[0]).SequenceEqual(expected))
             {
-                OnLog?.Invoke("기존 한국어 이미지 로더와 매핑을 유지합니다.");
+                OnLog?.Invoke("기존 한국어 리소스 로더와 매핑을 유지합니다.");
                 return;
             }
         }
         string runtime = Path.Combine(cacheRoot, "runtime", Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(game))));
         Directory.CreateDirectory(runtime);
         string map = Path.Combine(runtime, "mappings-" + Guid.NewGuid().ToString("N") + ".tsv");
-        var lines = manifest.Entries.Select(e =>
-        {
-            string file = Path.GetFullPath(Path.Combine(package, e.CacheFile));
-            if (file.Length >= 260 || file.Any(char.IsControl)) throw new InvalidDataException("Resource path too long/invalid");
-            return $"{e.Target}\t{file}\t{e.Sha256}";
-        });
+        var lines = selectedMappings;
         File.WriteAllText(map, string.Join('\n', lines) + "\n", new UTF8Encoding(false));
         string dll = Path.Combine(game, "dinput8.dll"), ini = Path.Combine(game, "resource-swap.ini"), statePath = StatePath(game);
         byte[]? oldDll = File.Exists(dll) ? File.ReadAllBytes(dll) : null;
@@ -343,7 +333,26 @@ public sealed class IconResourceManager
             RestoreFile(dll, oldDll); RestoreFile(ini, oldIni); RestoreFile(statePath, oldState);
             File.Delete(map); throw;
         }
-        OnLog?.Invoke($"한국어 이미지 적용 완료: {manifest.Entries.Length:N0}개 경로, 모든 글로벌 언어에 적용됩니다.");
+        OnLog?.Invoke($"한국어 리소스 적용 완료: {selectedMappings.Count:N0}개 경로 · 이미지={(package != null)} · 프랑스어 음성={(voicePackage != null)}");
+    }
+    public static string[] BuildMappings(string? package, string? voicePackage)
+    {
+        var selectedMappings = new List<string>();
+        if (package != null)
+        {
+            var manifest = Read<Manifest>(Path.Combine(package, "manifest.json"));
+            var release = new Release { Kind = "icons-12", GlobalVersion = manifest.GlobalVersion, KoreanVersion = manifest.KoreanVersion,
+                GlobalExecutableSha256 = manifest.GlobalExecutableSha256, Mappings = manifest.Entries.Length,
+                UniqueFiles = manifest.Entries.Select(e => e.CacheFile).Distinct().Count() };
+            foreach (var pair in ValidateManifest(manifest, release)) VerifyTexture(Path.Combine(package, pair.Key), pair.Value);
+            selectedMappings.AddRange(manifest.Entries.Select(e => $"{e.Target}\t{Path.GetFullPath(Path.Combine(package, e.CacheFile))}\t{e.Sha256}"));
+        }
+        if (voicePackage != null) selectedMappings.AddRange(VoiceResourceManager.GetValidatedMappings(voicePackage));
+        if (selectedMappings.Any(line => line.Split('\t')[1].Length >= 260 || line.Count(c => c == '\t') != 2 || line.Any(c => char.IsControl(c) && c != '\t')))
+            throw new InvalidDataException("Resource path too long/invalid");
+        if (selectedMappings.Select(line => line.Split('\t')[0]).Distinct(StringComparer.Ordinal).Count() != selectedMappings.Count)
+            throw new InvalidDataException("Duplicate resource mapping");
+        return selectedMappings.ToArray();
     }
     private static void AtomicText(string path, string text)
     {
@@ -361,6 +370,6 @@ public sealed class IconResourceManager
         var saved = new[] { dll, ini, state }.ToDictionary(p => p, File.ReadAllBytes);
         try { File.Delete(ini); File.Delete(dll); File.Delete(state); }
         catch { foreach (var pair in saved) File.WriteAllBytes(pair.Key, pair.Value); throw; }
-        OnLog?.Invoke("한국어 이미지 적용 해제 완료. 다운로드한 패키지는 재사용할 수 있습니다.");
+        OnLog?.Invoke("한국어 이미지·음성 적용 해제 완료. 다운로드한 패키지는 재사용할 수 있습니다.");
     }
 }

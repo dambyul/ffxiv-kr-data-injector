@@ -22,6 +22,11 @@ public partial class MainViewModel : ObservableObject
     private bool _isInjecting = false;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanCancel))]
+    [NotifyPropertyChangedFor(nameof(CanInjectOrCancel))]
+    private bool _isCommitting;
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanInteract))]
     [NotifyPropertyChangedFor(nameof(CanGlobalInteract))]
     [NotifyPropertyChangedFor(nameof(CanInjectOrCancel))]
@@ -37,9 +42,9 @@ public partial class MainViewModel : ObservableObject
 
     public bool CanInteract => !IsInjecting && !IsRestoring && !IsDownloadingResources && IsGamePathValid;
     public bool CanGlobalInteract => !IsInjecting && !IsRestoring && !IsDownloadingResources;
-    public bool CanCancel => IsInjecting;
+    public bool CanCancel => IsInjecting && !IsCommitting;
 
-    public bool CanInjectOrCancel => true; // Always allow interaction to handle the toggle
+    public bool CanInjectOrCancel => !IsCommitting && !IsRestoring && !IsDownloadingResources;
 
     [ObservableProperty]
     private bool _hasFailed = false;
@@ -292,11 +297,20 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
+    private void UpdateInjectionProgress(double percent)
+    {
+        // Ignore late preparation/download callbacks after final application begins.
+        if (!IsInjecting || IsCommitting) return;
+        IsIndeterminate = false;
+        Progress = Math.Min(percent, 99);
+    }
+
     [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task Inject()
     {
         if (IsInjecting)
         {
+            if (IsCommitting) return;
             _injectCts?.Cancel();
             Log(LocalizationService.Instance.GetString("Log.CancellationRequested"));
             return;
@@ -348,6 +362,7 @@ public partial class MainViewModel : ObservableObject
                     Log("이미 적용된 폰트는 다시 처리하지 않습니다.");
                 }
                 bool imageResources = cvm.ImageResourcesSelected;
+                bool voiceResources = cvm.VoiceResourcesSelected;
                 var imageManager = new IconResourceManager();
                 imageManager.OnLog += Log;
                 bool versionMismatchConfirmed = false;
@@ -359,17 +374,27 @@ public partial class MainViewModel : ObservableObject
                     return result;
                 };
                 imageManager.OnClientVersionMismatch = confirmVersionMismatch;
-                imageManager.OnStatus += message => Avalonia.Threading.Dispatcher.UIThread.Post(() => StatusMessage = message);
-                imageManager.OnProgress += percent => Avalonia.Threading.Dispatcher.UIThread.Post(() => { IsIndeterminate = false; Progress = percent; });
+                imageManager.OnStatus += message => Avalonia.Threading.Dispatcher.UIThread.Post(() => { if (IsInjecting && !IsCommitting) StatusMessage = message; });
+                imageManager.OnProgress += percent => Avalonia.Threading.Dispatcher.UIThread.Post(() => UpdateInjectionProgress(percent));
                 string? imagePackage = null;
-                if (imageResources || IconResourceManager.HasInstallation(targetPath)) IconResourceManager.CheckInstallation(targetPath);
+                if (imageResources || voiceResources || IconResourceManager.HasInstallation(targetPath)) IconResourceManager.CheckInstallation(targetPath);
                 if (imageResources) imagePackage = await imageManager.EnsurePackageAsync(targetPath, SelectedBranch, _injectCts.Token);
+                string? voicePackage = null;
+                if (voiceResources)
+                {
+                    var voices = new VoiceResourceManager();
+                    voices.OnLog += Log;
+                    voices.OnClientVersionMismatch = confirmVersionMismatch;
+                    voices.OnStatus += message => Avalonia.Threading.Dispatcher.UIThread.Post(() => { if (IsInjecting && !IsCommitting) StatusMessage = message; });
+                    voices.OnProgress += percent => Avalonia.Threading.Dispatcher.UIThread.Post(() => UpdateInjectionProgress(percent));
+                    voicePackage = await voices.EnsurePackageAsync(targetPath, SelectedBranch, _injectCts.Token);
+                }
                 _injectCts.Token.ThrowIfCancellationRequested();
 
                 var originals = new OriginalResourceManager();
                 originals.OnLog += Log;
                 originals.OnClientVersionMismatch = confirmVersionMismatch;
-                originals.OnProgress += percent => Avalonia.Threading.Dispatcher.UIThread.Post(() => { IsIndeterminate = false; Progress = percent; });
+                originals.OnProgress += percent => Avalonia.Threading.Dispatcher.UIThread.Post(() => UpdateInjectionProgress(percent));
                 string originalPackage = await originals.EnsurePackageAsync(SelectedBranch, _injectCts.Token);
                 Avalonia.Threading.Dispatcher.UIThread.Post(() => StatusMessage = LocalizationService.Instance.GetString("Status.PreparingOriginals"));
                 workspace = await originals.PrepareWorkspaceAsync(targetPath, originalPackage, _injectCts.Token, preserveFonts: true);
@@ -386,7 +411,9 @@ public partial class MainViewModel : ObservableObject
                 };
 
                 var progress = new Progress<double>(percent => {
-                     Avalonia.Threading.Dispatcher.UIThread.Post(() => Progress = percent);
+                     Avalonia.Threading.Dispatcher.UIThread.Post(() => {
+                         if (IsInjecting && !IsCommitting) Progress = Math.Min(percent, 99);
+                     });
                 });
 
                 Log(LocalizationService.Instance.GetString("Log.InjectingFrom", _csvResourcePath));
@@ -408,11 +435,18 @@ public partial class MainViewModel : ObservableObject
                 // Note: SelectedLanguage is GameLanguage enum (jp/en/de/fr)
                 if (selectedFiles.Length > 0)
                     patcher.Inject(workspace!, _csvResourcePath, SelectedLanguage, fileFilter, null, progress, _injectCts.Token, useCompatibilityMode);
-                _injectCts.Token.ThrowIfCancellationRequested();
-                Avalonia.Threading.Dispatcher.UIThread.Post(() => StatusMessage = LocalizationService.Instance.GetString("Status.Committing"));
+                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    // Finish the cancellable phase before disabling cancellation and committing files.
+                    _injectCts.Token.ThrowIfCancellationRequested();
+                    IsCommitting = true;
+                    Progress = 0;
+                    IsIndeterminate = true;
+                    StatusMessage = LocalizationService.Instance.GetString("Status.Committing");
+                });
                 originals.Commit(targetPath, workspace!, () =>
                 {
-                    if (imageResources) imageManager.Install(targetPath, imagePackage!);
+                    if (imageResources || voiceResources) imageManager.Install(targetPath, imagePackage, voicePackage);
                     else imageManager.Uninstall(targetPath);
                 }, _injectCts.Token, preserveFonts: !applyFonts);
                 if (fontWasApplied && applyFonts) FontApplicationState.MarkApplied(targetPath, cvm.GetSelectedFiles());
@@ -452,6 +486,7 @@ public partial class MainViewModel : ObservableObject
             try { if (workspace != null) OriginalResourceManager.CleanupWorkspace(workspace); }
             catch (Exception ex) { Log("임시 작업 폴더 정리 실패: " + ex.Message); }
             IsInjecting = false;
+            IsCommitting = false;
             _injectCts?.Dispose();
             _injectCts = null;
         }
@@ -559,19 +594,24 @@ public partial class MainViewModel : ObservableObject
         _isLogUpdating = false;
     }
     [RelayCommand]
-    private void OpenDiscord()
+    private void OpenDiscord() => OpenExternalLink(Secrets.DiscordUrl, "Discord");
+
+    [RelayCommand]
+    private void OpenGitHub() => OpenExternalLink("https://github.com/dambyul/ffxiv-kr-data-injector/releases", "GitHub");
+
+    private void OpenExternalLink(string url, string name)
     {
         try
         {
             Process.Start(new ProcessStartInfo
             {
-                FileName = Secrets.DiscordUrl,
+                FileName = url,
                 UseShellExecute = true
             });
         }
         catch (Exception ex)
         {
-            Log($"Could not open Discord link: {ex.Message}");
+            Log($"Could not open {name} link: {ex.Message}");
         }
     }
 }

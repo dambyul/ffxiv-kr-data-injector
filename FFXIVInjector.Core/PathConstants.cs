@@ -11,6 +11,7 @@ public static class PathConstants
     );
 
     public static string ResourcesRoot => Path.Combine(AppDataPath, "resources");
+    public static string VoicePackagePath => Path.Combine(AppDataPath, "voice-packages");
     public static string IconPackagePath => Path.Combine(AppDataPath, "image-packages");
     public static string OriginalPackagePath => Path.Combine(AppDataPath, "original-packages");
     public static string CsvPath => Path.Combine(ResourcesRoot, "rawexd");

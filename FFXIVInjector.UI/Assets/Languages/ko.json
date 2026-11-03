@@ -67,12 +67,17 @@
     "Log.MajorError": "리소스 확인 중 치명적 오류 발생: {0}",
     "Log.AllResourcesUpToDate": "모든 리소스가 최신입니다.",
     "Coverage.Images.Name": "한국어 이미지 리소스",
-    "Coverage.Images.Description": "지역명·레벨 업·알림 등의 이미지 문구를 한국어로 표시합니다. 최초 다운로드 약 337MB, 저장 공간 약 5.3GB. 선택 해제 후 적용하면 이미지 로더가 제거됩니다.",
-    "Status.RestoreAndImagesRemoved": "폰트·텍스트 원본 복원 및 이미지 적용 해제 완료",
+    "Coverage.Images.Description": "지역명·레벨 업·알림 등의 이미지 문구를 한국어로 표시합니다. 최초 다운로드 약 337MB, 저장 공간 약 5.3GB. 선택 해제 후 적용하면 이미지 교체가 해제됩니다.",
+    "Status.RestoreAndImagesRemoved": "폰트·텍스트 원본 복원 및 이미지·음성 적용 해제 완료",
     "Warning.Administrator.Title": "관리자 권한으로 실행해 주세요",
     "Warning.Administrator.Message": "현재 관리자 권한으로 실행되지 않았습니다.\n게임 파일 변경이나 이미지 로더 설치·제거 과정에서 권한 오류가 발생할 수 있습니다.\n\n프로그램을 종료한 뒤 실행 파일을 우클릭하여 “관리자 권한으로 실행”을 선택해 주세요.",
     "Status.PreparingOriginals": "원본 기준으로 새 적용 준비 중...",
     "Status.RestoringOriginals": "폰트·텍스트 원본 복원 중...",
-    "Status.Committing": "완성된 패치 적용 중...",
-    "Status.CancelledUnchanged": "취소되었습니다. 기존 적용 상태를 유지합니다."
+    "Status.Committing": "패치 최종 적용 중입니다. 완료 안내가 나올 때까지 기다려 주세요.",
+    "Status.CancelledUnchanged": "취소되었습니다. 기존 적용 상태를 유지합니다.",
+    "Link.Discord": "Discord · 문의 및 버그 제보",
+    "Link.GitHub": "GitHub · 릴리스 다운로드",
+    "Coverage.Voices.Name": "한국어 음성 리소스",
+    "Coverage.Voices.Description": "프랑스어 음성을 한국어로 교체합니다. 최초 다운로드 약 3.1GB, 저장 공간 약 4.4GB. 선택 해제 후 적용하면 음성 교체가 해제됩니다.",
+    "Button.Committing": "마무리 중"
 }

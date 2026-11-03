@@ -83,3 +83,20 @@ S3 루트의 최신 `resources.zip` 하나를 사용하고, 호환성·해시 �
 - [FFXIVChnTextPatch-Souma](https://github.com/Souma-Sumire/FFXIVChnTextPatch-Souma): SqPack 주입 및 폰트 패치 구조 참조
 - [FFXIVChnTextPatch](https://github.com/reusu/FFXIVChnTextPatch): 텍스트 패치 라이브러리 구현체
 - [FFXIV KR Data Extractor](https://github.com/dambyul/ffxiv-kr-data-extractor): 리소스 생성 및 배포 파이프라인
+
+
+## 한국어 음성 리소스
+
+적용 범위에서 한국어 이미지 리소스 바로 아래의 **한국어 음성 리소스**를 선택합니다. 프랑스어 음성 경로를 대응 한국어 SCD로 연결하며, 이미지와 음성은 각각 선택·해제할 수 있습니다. 두 리소스는 동일한 소유권 기록을 사용하는 DLL/INI와 매핑 목록 하나를 공유합니다. 둘 다 선택 해제 후 적용하거나 복원하면 로더를 제거합니다. 기존 폰트·CSV 재적용 동작은 유지합니다.
+
+음성은 `voice-release.json`과 `voices.zip`으로 배포하며 CSV 공통 버전과 독립적입니다. 실제 ZIP 해시가 같으면 압축을 다시 다운로드하지 않습니다. 기존 독일어·프랑스어 통합 패키지 캐시도 재사용하며, DLL에는 프랑스어 매핑만 전달합니다. 새 버전으로 재적용하면 기존 독일어 매핑이 제거됩니다. 패키지가 없으면 음성 선택 적용은 오류로 중단하며 게임 파일은 변경하지 않습니다. 4GB 이상의 ZIP과 대용량 다운로드·취소, 파일 해시 및 경로 검사를 지원합니다.
+
+- 네이티브 로더 소스/빌드: `FFXIVInjector.Native/build.cmd` (빌드 후 Core의 내장 DLL 갱신)
+- 패키지 생성: `dotnet run --project tools/VoicePackage -- <audit directory> <KR game> <global game> <new output>`
+- 패키지 전체 해제 검증: `dotnet run --project tools/VoicePackage -- verify <package directory> <new extraction directory>`
+- 게임 실행 중에도 실행 가능한 음성 전용 회귀 검사: `dotnet run --project FFXIVInjector.Tests -- --voice-only`
+- 배포: extractor에서 `python transform/voices.py <package directory> --publish`
+
+패키지 생성기는 한국어 파일의 원본 해시와 글로벌 대상 경로를 확인하고 SCD 버전·큐/트랙 수·오디오 형식·라우팅이 대응하는 항목만 준비합니다. 언어별 파일에서 미세하게 다른 샘플레이트는 정상 범위에서 허용합니다. 검증 실패 항목은 `rejected.tsv`에 남기며 원본을 사용합니다. 실제 컷신 음성 재생·대사 타이밍은 합성 테스트나 파일 검사로 입증되지 않으므로 게임 내 확인이 필요합니다.
+
+네이티브 음성 로딩 함수 식별과 호출 규약 참고: Penumbra의 `RsfService`, `Signatures` (https://github.com/xivdev/Penumbra). MinHook 소스·라이선스는 `FFXIVInjector.Native/vendor`에 포함합니다.

@@ -31,5 +31,6 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Assets\Languages\*.json" />
+    <None Update="Assets\Icons\LICENSE-octicons.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

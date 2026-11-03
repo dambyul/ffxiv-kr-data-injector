@@ -7,6 +7,8 @@ string root = Path.Combine(Path.GetTempPath(), "injector-regression-" + Guid.New
 Directory.CreateDirectory(root);
 try
 {
+    VoiceTests.Run(root);
+    if (args.Contains("--voice-only")) return;
     const string version = "2026.10.06.0000.0000";
     const string missing = "0a0000.win32.dat1";
     string package = Path.Combine(root, "package");
