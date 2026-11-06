@@ -47,10 +47,23 @@ internal static class VoiceTests
         string imageExtracted=Path.Combine(root,"image-extracted");IconResourceManager.ExtractPackage(imageArchive,imageExtracted,imageRelease);
         byte[] changedTex=(byte[])tex.Clone();changedTex[^1]=42;File.WriteAllBytes(Path.Combine(imageExtracted,texAsset),changedTex);
         if(IconResourceManager.BuildMappings(imageExtracted,null).Length!=1)throw new Exception("Image payload hashes must be skipped");
-        changedTex[14]=2;File.WriteAllBytes(Path.Combine(imageExtracted,texAsset),changedTex);Reject(()=>IconResourceManager.BuildMappings(imageExtracted,null));
+        changedTex[14]=2;File.WriteAllBytes(Path.Combine(imageExtracted,texAsset),changedTex);
+        using(var locked=new FileStream(Path.Combine(imageExtracted,texAsset),FileMode.Open,FileAccess.ReadWrite,FileShare.None))
+            if(IconResourceManager.BuildMappings(imageExtracted,null).Length!=1)throw new Exception("Cached image mappings must not reopen textures");
         imageRelease.Bytes++;Reject(()=>IconResourceManager.ExtractPackage(imageArchive,Path.Combine(root,"image-bad-size"),imageRelease));
         if(IconResourceManager.BuildMappings(image,extracted).Length!=2||IconResourceManager.BuildMappings(image,null).Length!=1)throw new Exception("Independent image and voice selection");
-        File.WriteAllBytes(Path.Combine(extracted,asset),new byte[64]);Reject(()=>IconResourceManager.BuildMappings(null,extracted));
+        File.WriteAllBytes(Path.Combine(extracted,asset),new byte[64]);
+        using(var locked=new FileStream(Path.Combine(extracted,asset),FileMode.Open,FileAccess.ReadWrite,FileShare.None))
+            if(IconResourceManager.BuildMappings(null,extracted).Length!=1)throw new Exception("Cached voice mappings must not reopen sounds");
+        // Fresh extraction must still reject invalid payload headers.
+        string badHeaderArchive=Path.Combine(root,"bad-header.zip");
+        using(var zip=ZipFile.Open(badHeaderArchive,ZipArchiveMode.Create))
+        {
+            using(var writer=new StreamWriter(zip.CreateEntry("manifest.json").Open()))writer.Write(JsonSerializer.Serialize(manifest,json));
+            using(var stream=zip.CreateEntry(asset).Open())stream.Write(new byte[64]);
+        }
+        long savedBytes=release.Bytes;release.Bytes=new FileInfo(badHeaderArchive).Length;
+        Reject(()=>VoiceResourceManager.ExtractPackage(badHeaderArchive,Path.Combine(root,"bad-header-extracted"),release));release.Bytes=savedBytes;
         using(var zip=ZipFile.Open(archive,ZipArchiveMode.Update)){var extra=zip.CreateEntry("../unexpected");using var writer=new StreamWriter(extra.Open());writer.Write("bad");}
         release.Bytes=new FileInfo(archive).Length;release.Sha256=FileHash(archive);Reject(()=>VoiceResourceManager.ExtractPackage(archive,Path.Combine(root,"voice-bad-zip"),release));
         Console.WriteLine("PASS: French-only installation, source correspondence, duplicates, shared payloads, hash-free image/voice extraction/mappings, invalid header/size/traversal rejection, independent image/voice selections.");

@@ -105,16 +105,9 @@ public sealed class VoiceResourceManager
     private static Manifest VerifyPackage(string package, Release release, CancellationToken ct)
     {
         var manifest = Read<Manifest>(Path.Combine(package, "manifest.json"));
-        var files = ValidateManifest(manifest, release);
-        long bytes = 0;
-        foreach (var pair in files)
-        {
-            ct.ThrowIfCancellationRequested();
-            string file = Path.Combine(package, pair.Key);
-            VerifySound(file);
-            bytes += new FileInfo(file).Length;
-        }
-        if (bytes != release.UnpackedBytes) throw new InvalidDataException("Unpacked size mismatch");
+        ct.ThrowIfCancellationRequested();
+        ValidateManifest(manifest, release);
+        // Extraction checked the payload once. Reuse never opens individual assets.
         return manifest;
     }
     public static void ExtractPackage(string archive, string destination, Release release, CancellationToken ct = default)
@@ -203,7 +196,6 @@ public sealed class VoiceResourceManager
         string package = Path.Combine(cacheRoot, release.Sha256);
         if (Directory.Exists(package))
         {
-            OnStatus?.Invoke("저장된 한국어 음성 확인 중...");
             try { VerifyPackage(package, release, ct); SaveVersion(); OnLog?.Invoke("한국어 음성 최신 버전: 다운로드 없이 캐시 재사용"); return package; }
             catch (Exception ex) when (ex is IOException or InvalidDataException or JsonException)
             { OnLog?.Invoke("손상된 음성 캐시를 다시 다운로드합니다."); }
@@ -272,8 +264,6 @@ public sealed class VoiceResourceManager
         ValidateManifest(manifest, release);
         // Accept existing DE/FR packages without downloading again; install French targets only.
         var selected = manifest.Entries.Where(e => e.Target.EndsWith("_fr.scd", StringComparison.Ordinal)).ToArray();
-        foreach (var entry in selected.DistinctBy(e => e.CacheFile))
-            VerifySound(Path.Combine(package, entry.CacheFile));
         return selected.Select(e => {
             string path = Path.GetFullPath(Path.Combine(package, e.CacheFile));
             if (path.Length >= 260 || path.Any(char.IsControl)) throw new InvalidDataException("Voice path too long/invalid");

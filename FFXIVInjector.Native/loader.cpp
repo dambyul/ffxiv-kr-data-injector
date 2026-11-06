@@ -98,15 +98,6 @@ static bool IsVoicePath(const std::string& path) {
     static const std::regex pattern("^(cut/(ffxiv|ex[0-9]+)/sound/|sound/(voice/|battle/mon/))[a-z0-9_/]+_fr\\.scd$");
     return std::regex_match(path, pattern) && path.find("..") == std::string::npos;
 }
-static bool HasScdHeader(const fs::path& path) {
-    char header[32]; std::ifstream in(path, std::ios::binary);
-    return in.read(header, sizeof(header)) && !memcmp(header, "SEDBSSCF", 8);
-}
-static bool HasSingleMip(const fs::path& path) {
-    unsigned char header[80];
-    std::ifstream in(path, std::ios::binary);
-    return in.read(reinterpret_cast<char*>(header), sizeof(header)) && (header[14] & 0x3f) == 1;
-}
 // Small SEH helper: inspect foreign memory without C++ objects/destructors in this frame.
 static size_t ReadName(unsigned char* descriptor, char* output, size_t maximum, unsigned char** handle) {
     __try {
@@ -225,7 +216,6 @@ static void Initialize() {
         if (Hash(exeName) != expectedExeHash)
             Log("WARNING executable hash changed; continuing with signature validation");
         std::ifstream map(mapPath); std::string line;
-        std::unordered_map<std::wstring, bool> verified;
         while (std::getline(map, line)) {
             std::istringstream fields(line); std::string target, file, sha;
             std::getline(fields, target, '\t'); std::getline(fields, file, '\t'); std::getline(fields, sha);
@@ -235,11 +225,7 @@ static void Initialize() {
                 Log("DISABLED invalid scope"); return;
             }
             if (!fs::path(path).is_absolute() || path.size() >= 260 || sha.size() != 64) { Log("DISABLED invalid mapping"); return; }
-            auto [it, inserted] = verified.try_emplace(path);
-            if (inserted) {
-                if (IsVoicePath(normalized) ? !HasScdHeader(path) : !HasSingleMip(path)) { mappings.clear(); Log("DISABLED unsupported resource format"); return; }
-                // Inspect resource headers without reading entire image/voice payloads.
-            }
+            // Payload headers were checked during extraction; do not rescan all assets at startup.
             if (!mappings.emplace(normalized, path).second) { mappings.clear(); Log("DISABLED duplicate mapping"); return; }
         }
         if (!map.eof() || mappings.empty() || mappings.size() > 100000) { mappings.clear(); Log("DISABLED map read/scope error"); return; }

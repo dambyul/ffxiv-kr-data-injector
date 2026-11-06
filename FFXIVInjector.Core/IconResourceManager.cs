@@ -109,16 +109,9 @@ public sealed class IconResourceManager
     private static Manifest VerifyPackage(string package, Release release, CancellationToken ct)
     {
         var manifest = Read<Manifest>(Path.Combine(package, "manifest.json"));
-        var files = ValidateManifest(manifest, release);
-        long bytes = 0;
-        foreach (var pair in files)
-        {
-            ct.ThrowIfCancellationRequested();
-            string file = Path.Combine(package, pair.Key);
-            VerifyTexture(file);
-            bytes += new FileInfo(file).Length;
-        }
-        if (bytes != release.UnpackedBytes) throw new InvalidDataException("Unpacked size mismatch");
+        ct.ThrowIfCancellationRequested();
+        ValidateManifest(manifest, release);
+        // Extraction checked the payload once. Reuse never opens individual assets.
         return manifest;
     }
     public static void ExtractPackage(string archive, string destination, Release release, CancellationToken ct = default)
@@ -201,7 +194,6 @@ public sealed class IconResourceManager
         string package = Path.Combine(cacheRoot, release.Sha256);
         if (Directory.Exists(package))
         {
-            OnStatus?.Invoke("저장된 한국어 이미지 확인 중...");
             try { VerifyPackage(package, release, ct); SaveVersion(); OnLog?.Invoke("한국어 이미지 최신 버전: 다운로드 없이 캐시 재사용"); return package; }
             catch (Exception ex) when (ex is IOException or InvalidDataException or JsonException)
             { OnLog?.Invoke("손상된 이미지 캐시를 다시 다운로드합니다."); }
@@ -344,7 +336,7 @@ public sealed class IconResourceManager
             var release = new Release { Kind = "icons-12", GlobalVersion = manifest.GlobalVersion, KoreanVersion = manifest.KoreanVersion,
                 GlobalExecutableSha256 = manifest.GlobalExecutableSha256, Mappings = manifest.Entries.Length,
                 UniqueFiles = manifest.Entries.Select(e => e.CacheFile).Distinct().Count() };
-            foreach (var pair in ValidateManifest(manifest, release)) VerifyTexture(Path.Combine(package, pair.Key));
+            ValidateManifest(manifest, release);
             selectedMappings.AddRange(manifest.Entries.Select(e => $"{e.Target}\t{Path.GetFullPath(Path.Combine(package, e.CacheFile))}\t{e.Sha256}"));
         }
         if (voicePackage != null) selectedMappings.AddRange(VoiceResourceManager.GetValidatedMappings(voicePackage));
