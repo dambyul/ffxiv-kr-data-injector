@@ -7,6 +7,8 @@ string root = Path.Combine(Path.GetTempPath(), "injector-regression-" + Guid.New
 Directory.CreateDirectory(root);
 try
 {
+    await InjectorReleaseCheckerTests.Run();
+    ResourceCacheCleanupTests.Run(root);
     VoiceTests.Run(root);
     if (args.Contains("--voice-only")) return;
     const string version = "2026.10.06.0000.0000";

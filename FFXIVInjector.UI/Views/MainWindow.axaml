@@ -21,6 +21,7 @@
         <conv:EnumToBoolConverter x:Key="EnumToBool"/>
         <conv:LanguageDisplayConverter x:Key="LanguageDisplayConverter"/>
         <conv:BoolToValueConverter x:Key="ProgressColorConverter" TrueValue="#D32F2F" FalseValue="{DynamicResource SystemAccentColor}"/>
+        <conv:BoolToValueConverter x:Key="VersionBorderConverter" TrueValue="#E7A33E" FalseValue="Transparent"/>
     </Window.Resources>
     <Window.Styles>
         <Style Selector="Button.headerLink">
@@ -59,9 +60,19 @@
         
         <!-- Row 0: Header Section -->
         <Grid Grid.Row="0" Margin="0,10,0,25" ColumnDefinitions="*, Auto">
-            <TextBlock Grid.Column="0"
+            <StackPanel Grid.Column="0" Spacing="5" VerticalAlignment="Center">
+                <TextBlock
                        Text="{Binding Source={x:Static services:LocalizationService.Instance}, Path=[Header.Title]}"
                        FontSize="26" FontWeight="Bold" VerticalAlignment="Center"/>
+                <Button Command="{Binding OpenGitHubCommand}"
+                        Background="Transparent" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                        BorderBrush="{Binding HasReleaseMismatch, Converter={StaticResource VersionBorderConverter}}"
+                        BorderThickness="1" CornerRadius="4" Padding="5,1" FontSize="12"
+                        HorizontalAlignment="Left" Cursor="Hand"
+                        ToolTip.Tip="{Binding ReleaseNotice}">
+                    <TextBlock Text="{Binding AppVersionLabel}"/>
+                </Button>
+            </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" Margin="12,0,0,0"
                         VerticalAlignment="Center">
                 <Button Command="{Binding OpenDiscordCommand}" Classes="headerLink"

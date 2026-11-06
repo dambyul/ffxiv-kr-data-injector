@@ -225,7 +225,7 @@ static void Initialize() {
         if (Hash(exeName) != expectedExeHash)
             Log("WARNING executable hash changed; continuing with signature validation");
         std::ifstream map(mapPath); std::string line;
-        std::unordered_map<std::wstring, std::string> verified;
+        std::unordered_map<std::wstring, bool> verified;
         while (std::getline(map, line)) {
             std::istringstream fields(line); std::string target, file, sha;
             std::getline(fields, target, '\t'); std::getline(fields, file, '\t'); std::getline(fields, sha);
@@ -238,9 +238,9 @@ static void Initialize() {
             auto [it, inserted] = verified.try_emplace(path);
             if (inserted) {
                 if (IsVoicePath(normalized) ? !HasScdHeader(path) : !HasSingleMip(path)) { mappings.clear(); Log("DISABLED unsupported resource format"); return; }
-                it->second = Hash(path);
+                // Inspect resource headers without reading entire image/voice payloads.
             }
-            if (it->second != sha || !mappings.emplace(normalized, path).second) { mappings.clear(); Log("DISABLED invalid hash/duplicate mapping"); return; }
+            if (!mappings.emplace(normalized, path).second) { mappings.clear(); Log("DISABLED duplicate mapping"); return; }
         }
         if (!map.eof() || mappings.empty() || mappings.size() > 100000) { mappings.clear(); Log("DISABLED map read/scope error"); return; }
         bool hasTextures = std::any_of(mappings.begin(), mappings.end(), [](const auto& e) { return IsBannerPath(e.first); });

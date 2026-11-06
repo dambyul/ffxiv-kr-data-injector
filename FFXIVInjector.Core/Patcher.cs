@@ -22,6 +22,7 @@ public interface IPatcher
 public class CsvInjector : IPatcher
 {
     public event Action<string>? OnLog;
+    public event Action<string>? OnStatus;
     public bool AbortOnFailure { get; set; }
 
     private class DataJson
@@ -59,6 +60,8 @@ public class CsvInjector : IPatcher
         }
 
         ct.ThrowIfCancellationRequested();
+        progress?.Report(0);
+        OnStatus?.Invoke("패치 적용 준비 중...");
 
         // Gather files from resource folder
         var allFiles = Directory.GetFiles(csvResourcePath, "*.*", SearchOption.AllDirectories)
@@ -71,6 +74,7 @@ public class CsvInjector : IPatcher
                                     var rel = Path.GetRelativePath(csvResourcePath, f).Replace('\\', '/').ToLowerInvariant();
                                     return fileFilter.Contains(rel);
                                 })
+                                .OrderBy(f => IsFontAsset(f) ? 0 : 1)
                                 .ToArray();
 
         OnLog?.Invoke($"Starting injection...");
@@ -176,11 +180,23 @@ public class CsvInjector : IPatcher
                 OnLog?.Invoke($"  [Reconstruct] Preparing {allFiles.Length} assets for injection...");
                 int reconstructedCount = 0;
                 int skippedCount = 0;
+                int processedFiles = 0;
+                var reconstructionUpdates = System.Diagnostics.Stopwatch.StartNew();
+                string previousPreparationStage = "";
 
                 // Process resource files
                 foreach (var file in allFiles)
                 {
                     ct.ThrowIfCancellationRequested();
+                    progress?.Report(50.0 * processedFiles++ / allFiles.Length);
+                    string preparationStage = IsFontAsset(file) ? "폰트 적용 준비" : "텍스트 적용 준비";
+                    if (preparationStage != previousPreparationStage || reconstructionUpdates.ElapsedMilliseconds >= 250)
+                    {
+                        if (preparationStage != previousPreparationStage) OnLog?.Invoke(preparationStage + " 중...");
+                        OnStatus?.Invoke($"{preparationStage} 중... {processedFiles:N0}/{allFiles.Length:N0}");
+                        previousPreparationStage = preparationStage;
+                        reconstructionUpdates.Restart();
+                    }
                     var extension = Path.GetExtension(file).ToLowerInvariant();
                     var relFile = Path.GetRelativePath(csvResourcePath, file).Replace('\\', '/').ToLowerInvariant();
 
@@ -340,6 +356,7 @@ public class CsvInjector : IPatcher
                 }
 
                 OnLog?.Invoke($"  [Reconstruct] Completed: {reconstructedCount} queued, {skippedCount} skipped.");
+                progress?.Report(50);
 
                 lumina.Dispose();
 
@@ -347,11 +364,19 @@ public class CsvInjector : IPatcher
                 using var writer = new SqPackWriter(gamePath, OnLog);
                 int totalInjections = injectionQueue.Count;
                 int currentInjection = 0;
+                string previousWriteStage = "";
 
 
                 foreach (var iq in injectionQueue)
                 {
                     ct.ThrowIfCancellationRequested();
+                    string writeStage = IsFontAsset(iq.target) ? "폰트 적용" : "텍스트 적용";
+                    if (writeStage != previousWriteStage)
+                    {
+                        OnStatus?.Invoke(writeStage + " 중...");
+                        OnLog?.Invoke(writeStage + " 중...");
+                        previousWriteStage = writeStage;
+                    }
                     try {
                         byte[] entry = iq.isTex ? SqPackBuilder.BuildTexture(iq.data) : SqPackBuilder.BuildBinary(iq.data);
                         long offset = writer.AppendRawBlock(iq.repoFolder, $"{iq.domain}.win32.dat0", entry);
@@ -368,10 +393,11 @@ public class CsvInjector : IPatcher
                     }
                     
                     currentInjection++;
-                    progress?.Report((double)currentInjection / totalInjections * 100);
+                    progress?.Report(50 + (double)currentInjection / totalInjections * 49);
                 }
 
                 // Finalize index files
+                OnStatus?.Invoke("텍스트 적용 마무리 중...");
                 foreach (var entry in indexBuffers) {
                     var parts = entry.Key.Split('/');
                     string folder = parts[0];
@@ -390,6 +416,8 @@ public class CsvInjector : IPatcher
         }
         catch (Exception ex) { OnLog?.Invoke($"Fatal Error: {ex.Message}"); throw; }
     }
+
+    private static bool IsFontAsset(string path) => Path.GetExtension(path).ToLowerInvariant() is ".fdt" or ".tex";
 
     private Lumina.Data.Category? GetCategory(Lumina.Data.Repository repo, byte catId)
     {

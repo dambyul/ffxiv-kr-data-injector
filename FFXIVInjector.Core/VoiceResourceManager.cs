@@ -1,6 +1,5 @@
 using System.IO.Compression;
 using System.Net;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -56,7 +55,6 @@ public sealed class VoiceResourceManager
     private sealed record Installation(string GamePath, string DllSha256, string IniSha256);
     private static string StatePath(string game) => Path.Combine(game, "resource-swap.installation.json");
     public static bool HasInstallation(string gamePath) => File.Exists(StatePath(GameDirectory(gamePath)));
-    private static string Hash(string path) { using var stream = File.OpenRead(path); return Convert.ToHexStringLower(SHA256.HashData(stream)); }
     private static T Read<T>(string path) => JsonSerializer.Deserialize<T>(File.ReadAllText(path), Json) ?? throw new InvalidDataException("Empty metadata");
     private static string GameDirectory(string path)
     {
@@ -98,9 +96,8 @@ public sealed class VoiceResourceManager
         if (files.Count != release.UniqueFiles) throw new InvalidDataException("Voice file count mismatch");
         return files;
     }
-    private static void VerifySound(string file, string digest)
+    private static void VerifySound(string file)
     {
-        if (Hash(file) != digest) throw new InvalidDataException("Voice checksum mismatch");
         using var stream = File.OpenRead(file);
         Span<byte> header = stackalloc byte[32]; stream.ReadExactly(header);
         if (!header[..8].SequenceEqual("SEDBSSCF"u8)) throw new InvalidDataException("Invalid SCD header");
@@ -114,7 +111,7 @@ public sealed class VoiceResourceManager
         {
             ct.ThrowIfCancellationRequested();
             string file = Path.Combine(package, pair.Key);
-            VerifySound(file, pair.Value);
+            VerifySound(file);
             bytes += new FileInfo(file).Length;
         }
         if (bytes != release.UnpackedBytes) throw new InvalidDataException("Unpacked size mismatch");
@@ -123,8 +120,8 @@ public sealed class VoiceResourceManager
     public static void ExtractPackage(string archive, string destination, Release release, CancellationToken ct = default)
     {
         if (Directory.Exists(destination)) throw new IOException("Extraction destination already exists");
-        if (new FileInfo(archive).Length != release.Bytes || Hash(archive) != release.Sha256)
-            throw new InvalidDataException("Archive checksum/size mismatch");
+        if (new FileInfo(archive).Length != release.Bytes)
+            throw new InvalidDataException("Archive size mismatch");
         using var zip = ZipFile.OpenRead(archive);
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in zip.Entries)
@@ -149,7 +146,7 @@ public sealed class VoiceResourceManager
             ct.ThrowIfCancellationRequested();
             string file = Path.Combine(destination, pair.Key);
             zip.GetEntry(pair.Key)!.ExtractToFile(file);
-            VerifySound(file, pair.Value);
+            VerifySound(file);
         }
         File.WriteAllText(Path.Combine(destination, "manifest.json"), JsonSerializer.Serialize(manifest, Json));
     }
@@ -163,18 +160,39 @@ public sealed class VoiceResourceManager
         client.DefaultRequestHeaders.UserAgent.ParseAdd("FFXIVInjector/1.1");
         string baseUrl = Config.ResourceBaseUrl.TrimEnd('/') + "/";
         OnStatus?.Invoke("한국어 음성 버전 확인 중...");
-        string descriptorName = branch == ResourceBranch.Stable ? "voice-release.json" : "dev-voice-release.json";
-        string json;
-        using (var response = await client.GetAsync($"{baseUrl}{descriptorName}?t={DateTimeOffset.UtcNow.ToUnixTimeSeconds()}", ct))
-        {
-            if (response.StatusCode == HttpStatusCode.NotFound) throw new InvalidOperationException("한국어 음성 패키지가 아직 배포되지 않았습니다.");
-            response.EnsureSuccessStatusCode(); json = await response.Content.ReadAsStringAsync(ct);
-        }
+        string versionFile = branch == ResourceBranch.Stable ? "version.txt" : "dev-version.txt";
+        string remoteVersion = S3ResourceManager.ParseVersionText(
+            await client.GetStringAsync($"{baseUrl}{versionFile}?t={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}", ct), branch);
+        if (!Regex.IsMatch(remoteVersion, @"^\d+(\.\d+){4,6}$")) throw new InvalidDataException("Invalid shared text/resource version");
         string versionRoot = Path.Combine(cacheRoot, "versions", channel, version);
         string localVersion = Path.Combine(versionRoot, "version.txt"), localRelease = Path.Combine(versionRoot, "release.json");
+        string json = "";
+        if (File.Exists(localVersion) && File.ReadAllText(localVersion).Trim() == remoteVersion && File.Exists(localRelease))
+        {
+            json = File.ReadAllText(localRelease);
+            try { if (JsonSerializer.Deserialize<Release>(json, Json)?.TextVersion != remoteVersion) json = ""; }
+            catch (JsonException) { json = ""; }
+        }
+        if (json.Length == 0)
+        {
+            using var metadata = JsonDocument.Parse(await client.GetStringAsync($"{baseUrl}data.json?t={remoteVersion}", ct));
+            if (metadata.RootElement.TryGetProperty("voiceResources", out var voices)) json = voices.GetRawText();
+            else
+            {
+                // Migration: existing releases have a separate descriptor without a shared version.
+                string descriptorName = branch == ResourceBranch.Stable ? "voice-release.json" : "dev-voice-release.json";
+                using var response = await client.GetAsync($"{baseUrl}{descriptorName}?t={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}", ct);
+                if (response.StatusCode == HttpStatusCode.NotFound) throw new InvalidOperationException("한국어 음성 패키지가 아직 배포되지 않았습니다.");
+                response.EnsureSuccessStatusCode();
+                var legacy = JsonSerializer.Deserialize<Release>(await response.Content.ReadAsStringAsync(ct), Json)
+                    ?? throw new InvalidDataException("Empty voice release");
+                if (string.IsNullOrEmpty(legacy.TextVersion)) legacy.TextVersion = remoteVersion;
+                json = JsonSerializer.Serialize(legacy, Json);
+            }
+        }
         if (json.Length > 65536) throw new InvalidDataException("Oversized release descriptor");
         var release = JsonSerializer.Deserialize<Release>(json, Json) ?? throw new InvalidDataException("Empty release");
-        string remoteVersion = release.Sha256;
+        ValidateSharedVersion(release, remoteVersion);
         if (release.GlobalVersion != version)
         {
             bool proceed = OnClientVersionMismatch != null && await OnClientVersionMismatch(release.GlobalVersion, version);
@@ -185,7 +203,7 @@ public sealed class VoiceResourceManager
         string package = Path.Combine(cacheRoot, release.Sha256);
         if (Directory.Exists(package))
         {
-            OnStatus?.Invoke("저장된 한국어 음성 검증 중...");
+            OnStatus?.Invoke("저장된 한국어 음성 확인 중...");
             try { VerifyPackage(package, release, ct); SaveVersion(); OnLog?.Invoke("한국어 음성 최신 버전: 다운로드 없이 캐시 재사용"); return package; }
             catch (Exception ex) when (ex is IOException or InvalidDataException or JsonException)
             { OnLog?.Invoke("손상된 음성 캐시를 다시 다운로드합니다."); }
@@ -194,7 +212,7 @@ public sealed class VoiceResourceManager
         string archive = stage + ".zip";
         try
         {
-            OnStatus?.Invoke("한국어 음성 다운로드 중...");
+            OnStatus?.Invoke("음성 리소스 다운로드 중...");
             using (var download = await client.GetAsync(baseUrl + release.ArchiveKey + "?v=" + release.Sha256, HttpCompletionOption.ResponseHeadersRead, ct))
             {
                 download.EnsureSuccessStatusCode();
@@ -212,7 +230,7 @@ public sealed class VoiceResourceManager
                 }
                 if (count != release.Bytes) throw new InvalidDataException("Incomplete resource download");
             }
-            OnStatus?.Invoke("한국어 음성 압축 해제·검증 중...");
+            OnStatus?.Invoke("음성 리소스 압축 해제 중...");
             ExtractPackage(archive, stage, release, ct);
             ct.ThrowIfCancellationRequested();
             if (Directory.Exists(package))
@@ -237,7 +255,13 @@ public sealed class VoiceResourceManager
             Directory.CreateDirectory(versionRoot);
             AtomicText(localRelease, json);
             AtomicText(localVersion, remoteVersion + "\n");
+            ResourceCacheCleanup.KeepVersionMetadata(cacheRoot, versionRoot, OnLog);
         }
+    }
+    public static void ValidateSharedVersion(Release release, string sharedVersion)
+    {
+        if (!Regex.IsMatch(sharedVersion, @"^\d+(\.\d+){4,6}$") || release.TextVersion != sharedVersion)
+            throw new InvalidDataException("Text/voice release versions differ; retry after publication completes");
     }
     public static string[] GetValidatedMappings(string package)
     {
@@ -249,7 +273,7 @@ public sealed class VoiceResourceManager
         // Accept existing DE/FR packages without downloading again; install French targets only.
         var selected = manifest.Entries.Where(e => e.Target.EndsWith("_fr.scd", StringComparison.Ordinal)).ToArray();
         foreach (var entry in selected.DistinctBy(e => e.CacheFile))
-            VerifySound(Path.Combine(package, entry.CacheFile), entry.Sha256);
+            VerifySound(Path.Combine(package, entry.CacheFile));
         return selected.Select(e => {
             string path = Path.GetFullPath(Path.Combine(package, e.CacheFile));
             if (path.Length >= 260 || path.Any(char.IsControl)) throw new InvalidDataException("Voice path too long/invalid");

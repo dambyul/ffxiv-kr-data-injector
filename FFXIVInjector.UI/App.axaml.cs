@@ -96,6 +96,7 @@ public partial class App : Application
 
             desktop.MainWindow.Opened += async (_, _) =>
             {
+                _ = vm.CheckAppReleaseAsync();
                 if (OperatingSystem.IsWindows())
                 {
                     using var identity = WindowsIdentity.GetCurrent();

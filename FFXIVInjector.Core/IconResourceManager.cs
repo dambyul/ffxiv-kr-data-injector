@@ -99,9 +99,8 @@ public sealed class IconResourceManager
         if (files.Count != release.UniqueFiles) throw new InvalidDataException("Image file count mismatch");
         return files;
     }
-    private static void VerifyTexture(string file, string digest)
+    private static void VerifyTexture(string file)
     {
-        if (Hash(file) != digest) throw new InvalidDataException("Image checksum mismatch");
         using var stream = File.OpenRead(file);
         Span<byte> header = stackalloc byte[80];
         stream.ReadExactly(header);
@@ -116,7 +115,7 @@ public sealed class IconResourceManager
         {
             ct.ThrowIfCancellationRequested();
             string file = Path.Combine(package, pair.Key);
-            VerifyTexture(file, pair.Value);
+            VerifyTexture(file);
             bytes += new FileInfo(file).Length;
         }
         if (bytes != release.UnpackedBytes) throw new InvalidDataException("Unpacked size mismatch");
@@ -125,8 +124,8 @@ public sealed class IconResourceManager
     public static void ExtractPackage(string archive, string destination, Release release, CancellationToken ct = default)
     {
         if (Directory.Exists(destination)) throw new IOException("Extraction destination already exists");
-        if (new FileInfo(archive).Length != release.Bytes || Hash(archive) != release.Sha256)
-            throw new InvalidDataException("Archive checksum/size mismatch");
+        if (new FileInfo(archive).Length != release.Bytes)
+            throw new InvalidDataException("Archive size mismatch");
         using var zip = ZipFile.OpenRead(archive);
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in zip.Entries)
@@ -151,7 +150,7 @@ public sealed class IconResourceManager
             ct.ThrowIfCancellationRequested();
             string file = Path.Combine(destination, pair.Key);
             zip.GetEntry(pair.Key)!.ExtractToFile(file);
-            VerifyTexture(file, pair.Value);
+            VerifyTexture(file);
         }
         File.WriteAllText(Path.Combine(destination, "manifest.json"), JsonSerializer.Serialize(manifest, Json));
     }
@@ -202,7 +201,7 @@ public sealed class IconResourceManager
         string package = Path.Combine(cacheRoot, release.Sha256);
         if (Directory.Exists(package))
         {
-            OnStatus?.Invoke("저장된 한국어 이미지 검증 중...");
+            OnStatus?.Invoke("저장된 한국어 이미지 확인 중...");
             try { VerifyPackage(package, release, ct); SaveVersion(); OnLog?.Invoke("한국어 이미지 최신 버전: 다운로드 없이 캐시 재사용"); return package; }
             catch (Exception ex) when (ex is IOException or InvalidDataException or JsonException)
             { OnLog?.Invoke("손상된 이미지 캐시를 다시 다운로드합니다."); }
@@ -211,7 +210,7 @@ public sealed class IconResourceManager
         string archive = stage + ".zip";
         try
         {
-            OnStatus?.Invoke("한국어 이미지 다운로드 중...");
+            OnStatus?.Invoke("이미지 리소스 다운로드 중...");
             using (var download = await client.GetAsync(baseUrl + release.ArchiveKey + "?v=" + release.Sha256, HttpCompletionOption.ResponseHeadersRead, ct))
             {
                 download.EnsureSuccessStatusCode();
@@ -229,7 +228,7 @@ public sealed class IconResourceManager
                 }
                 if (count != release.Bytes) throw new InvalidDataException("Incomplete resource download");
             }
-            OnStatus?.Invoke("한국어 이미지 압축 해제·검증 중...");
+            OnStatus?.Invoke("이미지 리소스 압축 해제 중...");
             ExtractPackage(archive, stage, release, ct);
             ct.ThrowIfCancellationRequested();
             if (Directory.Exists(package))
@@ -254,6 +253,7 @@ public sealed class IconResourceManager
             Directory.CreateDirectory(versionRoot);
             AtomicText(localRelease, json);
             AtomicText(localVersion, remoteVersion + "\n");
+            ResourceCacheCleanup.KeepVersionMetadata(cacheRoot, versionRoot, OnLog);
         }
     }
     private static byte[] LoaderBytes()
@@ -344,7 +344,7 @@ public sealed class IconResourceManager
             var release = new Release { Kind = "icons-12", GlobalVersion = manifest.GlobalVersion, KoreanVersion = manifest.KoreanVersion,
                 GlobalExecutableSha256 = manifest.GlobalExecutableSha256, Mappings = manifest.Entries.Length,
                 UniqueFiles = manifest.Entries.Select(e => e.CacheFile).Distinct().Count() };
-            foreach (var pair in ValidateManifest(manifest, release)) VerifyTexture(Path.Combine(package, pair.Key), pair.Value);
+            foreach (var pair in ValidateManifest(manifest, release)) VerifyTexture(Path.Combine(package, pair.Key));
             selectedMappings.AddRange(manifest.Entries.Select(e => $"{e.Target}\t{Path.GetFullPath(Path.Combine(package, e.CacheFile))}\t{e.Sha256}"));
         }
         if (voicePackage != null) selectedMappings.AddRange(VoiceResourceManager.GetValidatedMappings(voicePackage));

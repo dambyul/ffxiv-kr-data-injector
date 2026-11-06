@@ -142,6 +142,7 @@ public sealed class OriginalResourceManager
         Directory.CreateDirectory(state);
         File.WriteAllText(releasePath, JsonSerializer.Serialize(release));
         File.WriteAllText(VersionPath(branch), version);
+        ResourceCacheCleanup.KeepCurrent(PathConstants.OriginalPackagePath, package, OnLog);
         OnLog?.Invoke("원본 파일 준비 완료: " + release.GlobalVersion);
         return package;
     }

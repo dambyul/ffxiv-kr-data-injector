@@ -1,12 +1,19 @@
 using System.Reflection;
 using FFXIVInjector.UI.ViewModels;
 var vm=new MainViewModel();
+Check(vm.CurrentAppVersion=="1.6.1"&&vm.AppVersionLabel=="v1.6.1","Header version must follow assembly metadata");
+Check(!vm.HasReleaseMismatch,"Release notice must be hidden until a mismatch is confirmed");
 var changes=new List<string>();vm.PropertyChanged+=(_,e)=>changes.Add(e.PropertyName??"");
 using var cancellation=new CancellationTokenSource();
 typeof(MainViewModel).GetField("_injectCts",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(vm,cancellation);
 vm.IsInjecting=true;Check(vm.CanCancel&&vm.CanInjectOrCancel,"Preparation must remain cancellable");
 var progress=typeof(MainViewModel).GetMethod("UpdateInjectionProgress",BindingFlags.Instance|BindingFlags.NonPublic)!;
-progress.Invoke(vm,new object[]{100d});Check(vm.Progress==99,"Preparation must not claim overall completion");
+progress.Invoke(vm,new object[]{100d});Check(vm.Progress==100,"A resource download must be able to reach 100%");
+progress.Invoke(vm,new object[]{0d});Check(vm.Progress==0,"A new resource stage must be able to reset progress");
+var resourceStatus=typeof(MainViewModel).GetMethod("UpdateResourceStatus",BindingFlags.Instance|BindingFlags.NonPublic)!;
+progress.Invoke(vm,new object[]{100d});
+resourceStatus.Invoke(vm,new object[]{"음성 리소스 압축 해제 중..."});
+Check(vm.Progress==0&&vm.IsIndeterminate&&vm.StatusMessage=="음성 리소스 압축 해제 중...","Resource stage transitions must clear the previous percentage and name the current work");
 vm.IsCommitting=true;vm.Progress=0;vm.IsIndeterminate=true;
 Check(!vm.CanCancel&&!vm.CanInjectOrCancel,"Final application must disable cancellation");
 Check(changes.Contains(nameof(vm.CanCancel))&&changes.Contains(nameof(vm.CanInjectOrCancel)),"Button bindings must receive state updates");
@@ -14,5 +21,5 @@ progress.Invoke(vm,new object[]{100d});Check(vm.Progress==0&&vm.IsIndeterminate,
 await vm.InjectCommand.ExecuteAsync(null);Check(!cancellation.IsCancellationRequested,"Even a direct cancel command must be ignored during commit");
 vm.IsInjecting=false;vm.IsCommitting=false;progress.Invoke(vm,new object[]{75d});Check(vm.Progress==0,"Late callbacks must not change completed state");
 Check(vm.CanInjectOrCancel&&!vm.CanCancel,"Button must recover after final application");
-Console.WriteLine("PASS: final-stage cancellation guard, button notifications, preparation cap, and late progress callbacks.");
+Console.WriteLine("PASS: header version, download 100%/stage reset, final-stage cancellation guard, button notifications, and late progress callbacks.");
 static void Check(bool condition,string message){if(!condition)throw new Exception(message);}

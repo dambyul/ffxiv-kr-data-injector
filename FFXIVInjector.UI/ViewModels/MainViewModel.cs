@@ -14,6 +14,38 @@ namespace FFXIVInjector.UI.ViewModels;
 
 public partial class MainViewModel : ObservableObject
 {
+    public string CurrentAppVersion => typeof(MainViewModel).Assembly.GetName().Version!.ToString(3);
+    public string AppVersionLabel => "v" + CurrentAppVersion;
+
+    [ObservableProperty]
+    private bool _hasReleaseMismatch;
+
+    [ObservableProperty]
+    private string _releaseNotice = "GitHub 릴리스 페이지 열기";
+
+    private int _releaseCheckStarted;
+    public async Task CheckAppReleaseAsync()
+    {
+        if (Interlocked.Exchange(ref _releaseCheckStarted, 1) != 0) return;
+        try
+        {
+            using var client = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            var latest = await InjectorReleaseChecker.GetLatestAsync(client);
+            var current = InjectorReleaseChecker.ParseVersion(CurrentAppVersion);
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => {
+                HasReleaseMismatch = latest != current;
+                ReleaseNotice = latest == current ? "GitHub 릴리스 페이지 열기"
+                    : $"최신 릴리스 v{latest} · 릴리스 페이지 열기";
+            });
+        }
+        catch (Exception ex) when (ex is System.Net.Http.HttpRequestException or OperationCanceledException
+            or System.Text.Json.JsonException or InvalidDataException or KeyNotFoundException or InvalidOperationException)
+        {
+            // A release lookup failure must not interrupt resource downloads or patching.
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => Log("인젝터 최신 릴리스 확인 실패: " + ex.Message));
+        }
+    }
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanInteract))]
     [NotifyPropertyChangedFor(nameof(CanCancel))]
@@ -185,6 +217,9 @@ public partial class MainViewModel : ObservableObject
                 // Determine resource path
                 string resourcePath = PathConstants.ResourcesRoot;
                 PathConstants.EnsureDirectories();
+                string cleanupGame = GetActualGamePath();
+                if (!IsInjecting && !GameProcess.IsRunning() && !string.IsNullOrEmpty(cleanupGame))
+                    ResourceCacheCleanup.CleanRuntime(PathConstants.IconPackagePath, cleanupGame);
                 
                 var s3Manager = new S3ResourceManager();
                 s3Manager.OnLog += (msg) => {
@@ -302,7 +337,15 @@ public partial class MainViewModel : ObservableObject
         // Ignore late preparation/download callbacks after final application begins.
         if (!IsInjecting || IsCommitting) return;
         IsIndeterminate = false;
-        Progress = Math.Min(percent, 99);
+        Progress = Math.Clamp(percent, 0, 100);
+    }
+
+    private void UpdateResourceStatus(string message)
+    {
+        if (!IsInjecting || IsCommitting) return;
+        StatusMessage = message;
+        Progress = 0;
+        IsIndeterminate = true;
     }
 
     [RelayCommand(AllowConcurrentExecutions = true)]
@@ -374,7 +417,7 @@ public partial class MainViewModel : ObservableObject
                     return result;
                 };
                 imageManager.OnClientVersionMismatch = confirmVersionMismatch;
-                imageManager.OnStatus += message => Avalonia.Threading.Dispatcher.UIThread.Post(() => { if (IsInjecting && !IsCommitting) StatusMessage = message; });
+                imageManager.OnStatus += message => Avalonia.Threading.Dispatcher.UIThread.Post(() => UpdateResourceStatus(message));
                 imageManager.OnProgress += percent => Avalonia.Threading.Dispatcher.UIThread.Post(() => UpdateInjectionProgress(percent));
                 string? imagePackage = null;
                 if (imageResources || voiceResources || IconResourceManager.HasInstallation(targetPath)) IconResourceManager.CheckInstallation(targetPath);
@@ -385,7 +428,7 @@ public partial class MainViewModel : ObservableObject
                     var voices = new VoiceResourceManager();
                     voices.OnLog += Log;
                     voices.OnClientVersionMismatch = confirmVersionMismatch;
-                    voices.OnStatus += message => Avalonia.Threading.Dispatcher.UIThread.Post(() => { if (IsInjecting && !IsCommitting) StatusMessage = message; });
+                    voices.OnStatus += message => Avalonia.Threading.Dispatcher.UIThread.Post(() => UpdateResourceStatus(message));
                     voices.OnProgress += percent => Avalonia.Threading.Dispatcher.UIThread.Post(() => UpdateInjectionProgress(percent));
                     voicePackage = await voices.EnsurePackageAsync(targetPath, SelectedBranch, _injectCts.Token);
                 }
@@ -396,16 +439,24 @@ public partial class MainViewModel : ObservableObject
                 originals.OnClientVersionMismatch = confirmVersionMismatch;
                 originals.OnProgress += percent => Avalonia.Threading.Dispatcher.UIThread.Post(() => UpdateInjectionProgress(percent));
                 string originalPackage = await originals.EnsurePackageAsync(SelectedBranch, _injectCts.Token);
-                Avalonia.Threading.Dispatcher.UIThread.Post(() => StatusMessage = LocalizationService.Instance.GetString("Status.PreparingOriginals"));
+                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => {
+                    StatusMessage = LocalizationService.Instance.GetString("Status.PreparingOriginals");
+                    Progress = 0;
+                    IsIndeterminate = true;
+                });
                 workspace = await originals.PrepareWorkspaceAsync(targetPath, originalPackage, _injectCts.Token, preserveFonts: true);
 
                 // 2. Perform Injection
-                Avalonia.Threading.Dispatcher.UIThread.Post(() => {
+                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => {
                     StatusMessage = LocalizationService.Instance.GetString("Status.Injecting");
+                    Progress = 0;
                     IsIndeterminate = false;
                 });
 
                 var patcher = new CsvInjector { AbortOnFailure = true };
+                patcher.OnStatus += message => Avalonia.Threading.Dispatcher.UIThread.Post(() => {
+                    if (IsInjecting && !IsCommitting) StatusMessage = message;
+                });
                 patcher.OnLog += (msg) => {
                     Avalonia.Threading.Dispatcher.UIThread.Post(() => Log(msg));
                 };
@@ -450,6 +501,10 @@ public partial class MainViewModel : ObservableObject
                     else imageManager.Uninstall(targetPath);
                 }, _injectCts.Token, preserveFonts: !applyFonts);
                 if (fontWasApplied && applyFonts) FontApplicationState.MarkApplied(targetPath, cvm.GetSelectedFiles());
+                // Cache pruning is deliberately after commit: cancellation/failure keeps old assets usable.
+                if (imagePackage != null) ResourceCacheCleanup.KeepCurrent(PathConstants.IconPackagePath, imagePackage, Log);
+                if (voicePackage != null) ResourceCacheCleanup.KeepCurrent(PathConstants.VoicePackagePath, voicePackage, Log);
+                ResourceCacheCleanup.CleanRuntime(PathConstants.IconPackagePath, targetPath, Log);
 
                 Avalonia.Threading.Dispatcher.UIThread.Post(() => {
                     Progress = 100;
@@ -597,7 +652,7 @@ public partial class MainViewModel : ObservableObject
     private void OpenDiscord() => OpenExternalLink(Secrets.DiscordUrl, "Discord");
 
     [RelayCommand]
-    private void OpenGitHub() => OpenExternalLink("https://github.com/dambyul/ffxiv-kr-data-injector/releases", "GitHub");
+    private void OpenGitHub() => OpenExternalLink(InjectorReleaseChecker.ReleasesUrl, "GitHub");
 
     private void OpenExternalLink(string url, string name)
     {
